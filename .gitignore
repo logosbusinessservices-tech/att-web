@@ -1,0 +1,28 @@
+# Reference copies from the camera pipeline repo. Not shipped. Do not import from here.
+_pipeline_reference/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+*.db
+*.sqlite3
+
+# Face model cache (insightface downloads here)
+.insightface/
+
+# Edge offline queue
+edge_queue/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/

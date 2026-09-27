@@ -1,0 +1,282 @@
+[
+    {
+        "name":  "Alwal",
+        "lat":  17.505037,
+        "lon":  78.514663
+    },
+    {
+        "name":  "Ammuguda",
+        "lat":  17.488844,
+        "lon":  78.523693
+    },
+    {
+        "name":  "Arts College",
+        "lat":  17.417977,
+        "lon":  78.520038
+    },
+    {
+        "name":  "Begumpet",
+        "lat":  17.438594,
+        "lon":  78.458062
+    },
+    {
+        "name":  "Bharath Nagar",
+        "lat":  17.462603,
+        "lon":  78.430156
+    },
+    {
+        "name":  "BHEL",
+        "lat":  17.502219,
+        "lon":  78.282311
+    },
+    {
+        "name":  "Bhudevi Nagar",
+        "lat":  17.492966,
+        "lon":  78.502168
+    },
+    {
+        "name":  "Bolarum",
+        "lat":  17.533068,
+        "lon":  78.515457
+    },
+    {
+        "name":  "Bolarum Bazaar",
+        "lat":  17.51763,
+        "lon":  78.51568
+    },
+    {
+        "name":  "Borabanda",
+        "lat":  17.459069,
+        "lon":  78.407866
+    },
+    {
+        "name":  "Budvel",
+        "lat":  17.30986,
+        "lon":  78.424984
+    },
+    {
+        "name":  "Cavalry Barracks",
+        "lat":  17.49535,
+        "lon":  78.519068
+    },
+    {
+        "name":  "Chandanagar",
+        "lat":  17.487298,
+        "lon":  78.332214
+    },
+    {
+        "name":  "Charlapalli",
+        "lat":  17.458598,
+        "lon":  78.606606
+    },
+    {
+        "name":  "Dabirpura",
+        "lat":  17.366528,
+        "lon":  78.490124
+    },
+    {
+        "name":  "Dayanand Nagar",
+        "lat":  17.455939,
+        "lon":  78.531433
+    },
+    {
+        "name":  "Falaknuma",
+        "lat":  17.33266,
+        "lon":  78.475198
+    },
+    {
+        "name":  "Fateh Nagar",
+        "lat":  17.456201,
+        "lon":  78.449924
+    },
+    {
+        "name":  "Ferozguda",
+        "lat":  17.464892,
+        "lon":  78.460306
+    },
+    {
+        "name":  "Ghatkesar",
+        "lat":  17.452856,
+        "lon":  78.678298
+    },
+    {
+        "name":  "Gowdavalli",
+        "lat":  17.610758,
+        "lon":  78.46837
+    },
+    {
+        "name":  "Gundla Pochampally",
+        "lat":  17.56871,
+        "lon":  78.488237
+    },
+    {
+        "name":  "Hafeezpet",
+        "lat":  17.4824,
+        "lon":  78.363014
+    },
+    {
+        "name":  "HITEC City",
+        "lat":  17.469814,
+        "lon":  78.385378
+    },
+    {
+        "name":  "Huppuguda",
+        "lat":  17.341523,
+        "lon":  78.482505
+    },
+    {
+        "name":  "Hyderabad Deccan Nampally",
+        "lat":  17.392422,
+        "lon":  78.467596
+    },
+    {
+        "name":  "Jamai Osmania",
+        "lat":  17.411623,
+        "lon":  78.518161
+    },
+    {
+        "name":  "James Street",
+        "lat":  17.432952,
+        "lon":  78.487322
+    },
+    {
+        "name":  "Kacheguda",
+        "lat":  17.389311,
+        "lon":  78.49924
+    },
+    {
+        "name":  "Khairatabad",
+        "lat":  17.412974,
+        "lon":  78.461058
+    },
+    {
+        "name":  "Kottur",
+        "lat":  17.151294,
+        "lon":  78.286211
+    },
+    {
+        "name":  "Lakdi-ka-pul",
+        "lat":  17.403833,
+        "lon":  78.463502
+    },
+    {
+        "name":  "Lalaguda Gate",
+        "lat":  17.440812,
+        "lon":  78.524776
+    },
+    {
+        "name":  "Lingampalli",
+        "lat":  17.483122,
+        "lon":  78.317773
+    },
+    {
+        "name":  "Malakpet",
+        "lat":  17.376504,
+        "lon":  78.494826
+    },
+    {
+        "name":  "Malkajgiri",
+        "lat":  17.448344,
+        "lon":  78.528973
+    },
+    {
+        "name":  "Medchal",
+        "lat":  17.639925,
+        "lon":  78.475344
+    },
+    {
+        "name":  "Moula Ali",
+        "lat":  17.440739,
+        "lon":  78.55067
+    },
+    {
+        "name":  "Nagalapalli",
+        "lat":  17.460242,
+        "lon":  78.230083
+    },
+    {
+        "name":  "Nature Cure Hospital",
+        "lat":  17.445657,
+        "lon":  78.452149
+    },
+    {
+        "name":  "Necklace Road",
+        "lat":  17.423336,
+        "lon":  78.463186
+    },
+    {
+        "name":  "Neredmet",
+        "lat":  17.478111,
+        "lon":  78.536672
+    },
+    {
+        "name":  "NPA Shivaram Pally",
+        "lat":  17.323049,
+        "lon":  78.436567
+    },
+    {
+        "name":  "Ramachandrapuram TS",
+        "lat":  17.51022,
+        "lon":  78.282446
+    },
+    {
+        "name":  "Ramakistapuram Gate",
+        "lat":  17.476372,
+        "lon":  78.52909
+    },
+    {
+        "name":  "Safilguda",
+        "lat":  17.46162,
+        "lon":  78.533123
+    },
+    {
+        "name":  "Sanat Nagar",
+        "lat":  17.462236,
+        "lon":  78.436698
+    },
+    {
+        "name":  "Sanjeevaiah Park",
+        "lat":  17.4357,
+        "lon":  78.476402
+    },
+    {
+        "name":  "Secunderabad Junction",
+        "lat":  17.433859,
+        "lon":  78.502051
+    },
+    {
+        "name":  "Sitaphalmandi",
+        "lat":  17.427295,
+        "lon":  78.520723
+    },
+    {
+        "name":  "Suchitra Centre",
+        "lat":  17.489226,
+        "lon":  78.472906
+    },
+    {
+        "name":  "Telapur",
+        "lat":  17.47496,
+        "lon":  78.284976
+    },
+    {
+        "name":  "Timmapur",
+        "lat":  17.16914,
+        "lon":  78.288978
+    },
+    {
+        "name":  "Umdanagar",
+        "lat":  17.263407,
+        "lon":  78.393171
+    },
+    {
+        "name":  "Vidyanagar",
+        "lat":  17.401836,
+        "lon":  78.510812
+    },
+    {
+        "name":  "Yakutpura",
+        "lat":  17.360083,
+        "lon":  78.492194
+    }
+]

@@ -1,0 +1,28 @@
+# ── Web stack ────────────────────────────────────────────────────────────────
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+sqlalchemy==2.0.36
+pydantic-settings==2.7.1
+python-multipart==0.0.20
+# IANA timezone DB (Windows has no system zoneinfo; needed for IST calculations).
+tzdata==2024.2
+# Excel report export.
+openpyxl==3.1.5
+
+# ── Auth ─────────────────────────────────────────────────────────────────────
+python-jose[cryptography]==3.3.0
+bcrypt==4.2.1
+
+# ── Face (must match the pipeline exactly so embeddings are comparable) ───────
+insightface==2.0
+onnxruntime==1.20.1
+opencv-python==4.10.0.84
+numpy==2.1.3
+
+# ── Postgres driver (production only; harmless to install in dev) ─────────────
+# psycopg[binary]==3.2.3
+# pgvector==0.3.6
+
+# ── Testing (dev only) ───────────────────────────────────────────────────────
+pytest==8.3.4
+httpx==0.28.1

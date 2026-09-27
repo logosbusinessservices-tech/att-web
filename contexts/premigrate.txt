@@ -1,0 +1,163 @@
+Here's the complete feature inventory — organized for a technically-minded product owner. It covers what's **live** today and what's **parked**, with enough technical context to reason about scope and effort.
+
+---
+
+# ✅ LIVE — Built & Tested
+
+## Platform & architecture
+- **Two-tier app**: FastAPI (Python 3.13) backend + React 18 / Vite **PWA** frontend (installable, works partially offline).
+- **Data**: SQLite in dev; a config switch targets **Postgres + pgvector** for prod (not yet exercised).
+- **Auth**: JWT (HS256) + bcrypt password hashing; dept-scoped authorization on every supervisor action.
+- **Face recognition**: InsightFace **buffalo_s**, 512-dim embeddings — byte-compatible with the existing camera pipeline, so a gate camera and a field selfie match the same template.
+- **Time**: everything stored UTC, rendered/computed in **IST**.
+- **Test coverage**: **136 backend tests** passing.
+
+## Authentication & account security
+- **Password login** (employee code + password).
+- **OTP login** to mobile — 6-digit, bcrypt-hashed, 5-min TTL, attempt cap, resend cooldown (SMS provider pluggable: console in dev / Twilio stub).
+- **Change password** two ways: current password **or** 2FA one-time code via **mobile OTP or email OTP**.
+- **Onboarding security**: default password = employee code, forced-change flag, a persistent **ribbon nag** until changed, and a supervisor **reminder notification** if not changed within 3 days.
+
+## Roles
+- **Employee** and **Supervisor**, each with their own home screen and permissions.
+
+## Attendance engine (core)
+- Camera **entry/exit** events → per-day summaries: **present / absent** (presence-based; "late" was intentionally removed — hours-only), **hours-in-office** (pairs multiple in/out cycles), entry/exit counts.
+- **Working-day / weekend** calendar config.
+- **Anomaly detection**: missing entry/exit, and **two entries or two exits back-to-back** (flagged as likely camera-recognition misses).
+- **Append-only corrections**: raw events are never mutated; all changes are audit-logged.
+
+## Employee app
+- **View My Attendance** (read-only): day/week/month, per-day status, hours, and the actual **in/out crossings**; summary cards (Present / Absent / Attendance %).
+- **Field Attendance** (face + GPS) — shown only if the permission is granted.
+- **My Profile**, **Change Password**.
+- **Apply WFH/Leave** and **Holidays** — placeholder "Coming soon" screens.
+- (Employee-raised **disputes were removed** by design — corrections now happen supervisor-side.)
+
+## Field attendance (Phase 3)
+- **1:1 face verification** against the employee's own enrolled template (server-side buffalo_s).
+- **Active liveness**: on-device **blink detection** (MediaPipe FaceLandmarker, Apache-2.0) that **auto-captures** the selfie — no manual photo upload. Model + WASM are bundled locally and runtime-cached (works offline after first load).
+- **GPS geofence**: nearest-station + radius check; **per-station radius** (default **1 km**, tweakable per row).
+- **56 Hyderabad railway/MMTS stations** seeded from OpenStreetMap.
+- **Decision**: inside geofence + good GPS → **approved**; outside / weak / no GPS → **pending** ("not at a station — X km from …") routed to supervisor.
+- **Mandatory check-in/check-out pairing** enforced.
+- **Audit selfies** stored **60 days** (purge helper).
+- **Offline capture + sync (3d)**: scans taken with no signal are queued in **IndexedDB** (selfie + GPS + direction + **capture timestamp**) and **auto-replay** to the server when connectivity returns (server runs the real match/geofence at sync; capture time is preserved). Pending-count banner + "Sync now".
+
+## Supervisor app
+- **View My Attendance**.
+- **Employee Attendance** (dashboards): two-level **searchable department/employee filter**; per-employee daily drill-in.
+- **Attendance editing** (audit-friendly): **edit** any crossing's time, **delete** a crossing (tombstone), **add** a new entry/exit, and **day-level status override** (e.g. absent → present). New crossings are rejected only if they introduce a *new* sequence conflict.
+- **Analytics dashboard**:
+  - KPI cards (attendance %, present, absent, hours, staff count, field-pending) that **react to all filters**.
+  - **6 interactive charts** (Recharts): attendance-% trend, present-vs-absent, by-department, camera/field/manual split, hours-by-employee, lowest-attendance.
+  - **Filters**: date range, department, and a **staff-type multiselect** (Field / Supervisors / Office / All).
+  - **Data tables** view (by-department + employee roster) for exact numbers.
+  - **Export**: per-visual **CSV / PNG**, plus whole-dashboard **Excel / PDF / PPT**.
+- **Onboard Employee**: create with **department + reporting supervisor + role + field-scan permission**, then **face enrollment** (multi-photo → averaged embedding → cloud + edge gallery).
+- **Employee Settings**: fully editable anytime — name, phone, email, blood group, role, department, reporting supervisor, home station, field-scan permission.
+- **Field Approvals**: queue of uncertain-location scans with the **audit selfie**, distance, GPS accuracy → **Approve / Reject** (rejected scans stop counting).
+- **Notifications**: password reminders + camera-error alerts.
+- **My Profile**, **Change Password**.
+
+## Edge / pipeline integration
+- **Gallery pull** endpoint (`GET /edge/gallery`, incremental via `?since`, base64 embeddings) + a stdlib **edge pull client**; event **push client** with offline queue.
+
+## Demo data
+- Seeds: **6 departments, 6 supervisors, 30 employees** with a month of mixed camera + field attendance for realistic analytics.
+
+---
+
+# 🅿️ PARKED — Future
+
+## Whole features / phases
+1. **v2 — Leave / Work-from-home**: request → approve workflow, balances, attendance integration (on-leave status). *(placeholder button today)*
+2. **v2 — Holidays**: holiday calendar + management; holidays excluded from absent. *(placeholder button today)*
+3. **Phase 5 — Shifts & Admin** (biggest):
+   - **Shift/roster scheduling** and **per-shift attendance rules** (morning/evening/night — the current engine assumes a single day pattern).
+   - **Advanced analytics** beyond the current set.
+   - **Admin layer**: department/station CRUD, **per-station geofence-radius editor in the UI** (currently DB-only), **audit-log viewer**, **PHI/retention control panel**.
+
+## Field / face enhancements
+4. **True offline face *matching*** (Option C): run ArcFace in-browser (ONNX) so identity is confirmed on-device without connectivity — heavy download + biometrics-on-device tradeoff. *(Today: identity is confirmed at sync — Option B.)*
+5. **Passive anti-spoofing** (defeat photo/video/mask with no user action) — only active blink-liveness exists.
+6. **Scheduled selfie-purge job** — the 60-day purge function exists but isn't cron-scheduled.
+7. **Closed-app background sync** — offline scans currently sync while the app is open/backgrounded; syncing when the app is fully closed needs a Workbox Background-Sync service-worker queue.
+
+## Integrations (stubbed → console-only)
+8. **Twilio SMS** and **SMTP email** real providers (dev uses console + debug codes).
+9. **Edge deployment** — `pull_gallery.py` written but not wired to a physical edge box.
+
+## Reporting
+10. **Tables inside PDF/PPT** — dashboard PDF/PPT embed the **charts**; tabular data is on-screen + CSV only.
+
+## Infrastructure / production-readiness
+11. **Alembic migrations** — dev uses an additive `migrate_phase3.py`; no formal prod migration tooling.
+12. **Postgres + pgvector** — the switch exists in config but only SQLite has been run.
+
+---
+
+Good question — this matters for audit. Let me pull the actual dependency manifests so I give you an accurate answer, not a guess.    
+
+Searched for files matching `**/backend-api/**/requirements*.txt`, 1 match
+
+Searched for files matching `**/backend-api/**/pyproject.toml`, no matches
+
+Read 
+
+Read 
+
+Here's an honest license audit based on the actual manifests. Short version: **the software libraries are clean, but there are two real audit flags — one significant — that come from *pretrained models and data*, not the code.**
+
+## ✅ Clean — permissive, enterprise-safe
+
+**Frontend (npm)** — all **MIT** except MediaPipe (**Apache-2.0**):
+| Package | License |
+|---|---|
+| react, react-dom, react-router-dom | MIT |
+| recharts | MIT |
+| jspdf | MIT |
+| pptxgenjs | MIT |
+| @mediapipe/tasks-vision | Apache-2.0 |
+| vite, @vitejs/plugin-react, vite-plugin-pwa (workbox) | MIT |
+| tailwindcss, postcss, autoprefixer | MIT |
+
+**Backend (pip)** — MIT / BSD / Apache, all commercial-friendly:
+| Package | License |
+|---|---|
+| fastapi, sqlalchemy, pydantic(-settings), openpyxl, python-jose | MIT |
+| uvicorn, numpy, httpx, pytest | BSD |
+| python-multipart, bcrypt, tzdata, onnxruntime | Apache-2.0 |
+| cryptography | Apache-2.0 / BSD |
+
+These carry only **attribution** obligations (keep the license text) — no copyleft, no source-disclosure. Standard for enterprise.
+
+---
+
+## ⚠️ Two real audit flags
+
+### 1. InsightFace **pretrained model weights** (`buffalo_s`) — the big one
+- The **InsightFace code is MIT**, but its **pretrained models** (the `buffalo_*` / `antelopev2` families) are licensed **for non-commercial / academic research use only**.
+- Your app uses `buffalo_s` for face embeddings — so a **commercial/government production deployment could fail an audit** on the *model*, even though the code is fine.
+- **Important context:** this is **inherited from your existing camera pipeline** (which already uses `buffalo_s`) — it's a pre-existing org decision, not something new this project introduced. But it must be on the radar.
+- **Remediation options:** obtain a commercial face-recognition model license, train/fine-tune your own weights, or swap to a commercially-licensed model. (Because we kept embeddings pipeline-compatible, whatever the pipeline resolves, this app inherits automatically.)
+
+### 2. OpenStreetMap station coordinates — **ODbL 1.0**
+- The 56 Hyderabad station coordinates were sourced from **OpenStreetMap**, which is **ODbL** + requires **"© OpenStreetMap contributors"** attribution; ODbL's share-alike can attach to a *derived database*.
+- Risk is low (small set of factual lat/longs), but **attribution is required**.
+- **Remediation (easy):** add an OSM attribution line where stations are shown/admin-managed, **or** replace the seed with coordinates from an authoritative railway source you own (then there's no ODbL at all).
+
+---
+
+## 🟡 One minor thing
+- **`opencv-python`** wrapper is Apache-2.0 but its wheel bundles **FFmpeg (LGPL-2.1)**. LGPL via dynamic linking is generally fine, but on a **headless server** the cleaner choice is **`opencv-python-headless`** (same API, no GUI/codec surface) — removes the question entirely.
+- The **MediaPipe `face_landmarker.task`** model (liveness only, not identity) is published under **Apache-2.0** per its model card — fine, but worth confirming the model card at pin time.
+
+---
+
+## Bottom line
+- **Libraries: you're clean** — nothing copyleft/GPL, nothing that forces source disclosure.
+- **You could get flagged in an audit on the InsightFace pretrained weights** (non-commercial license) — resolve at the **pipeline/model level**; the app follows.
+- **OSM data needs attribution** — quick to fix.
+
+> This is an engineering good-faith summary, not legal advice — your legal/procurement team should sign off on the InsightFace model license specifically, since that's the one with commercial-use restrictions.
