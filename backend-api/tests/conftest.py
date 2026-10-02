@@ -209,3 +209,15 @@ def chief_headers(client):
 @pytest.fixture()
 def seed_dates(db_session):
     return _seed.dates
+
+
+@pytest.fixture()
+def seed_params(seed_dates):
+    """Explicit date range covering every seeded day.
+
+    Endpoints default to the current calendar month, but the seeded days are the
+    most recent working days relative to today and can fall in the prior month
+    (e.g. early in a month). Passing this range keeps the tests date-independent.
+    ISO date strings sort chronologically, so min/max give the span bounds.
+    """
+    return {"from_date": min(seed_dates.values()), "to_date": max(seed_dates.values())}

@@ -94,8 +94,8 @@ def test_summary_requires_auth(client):
     assert client.get("/attendance/summary").status_code == 401
 
 
-def test_summary_reflects_seeded_days(client, emp_headers, seed_dates):
-    r = client.get("/attendance/summary", headers=emp_headers)
+def test_summary_reflects_seeded_days(client, emp_headers, seed_dates, seed_params):
+    r = client.get("/attendance/summary", headers=emp_headers, params=seed_params)
     assert r.status_code == 200
     by_date = {d["date"]: d for d in r.json()}
     assert by_date[seed_dates["present"]]["status"] == "present"
@@ -103,14 +103,14 @@ def test_summary_reflects_seeded_days(client, emp_headers, seed_dates):
     assert by_date[seed_dates["absent"]]["status"] == "absent"
 
 
-def test_present_day_hours(client, emp_headers, seed_dates):
-    r = client.get("/attendance/summary", headers=emp_headers)
+def test_present_day_hours(client, emp_headers, seed_dates, seed_params):
+    r = client.get("/attendance/summary", headers=emp_headers, params=seed_params)
     day = next(d for d in r.json() if d["date"] == seed_dates["present"])
     assert day["hours_in_office"] == 8.75  # 09:15 -> 18:00
 
 
-def test_stats_counts(client, emp_headers):
-    r = client.get("/attendance/stats", headers=emp_headers)
+def test_stats_counts(client, emp_headers, seed_params):
+    r = client.get("/attendance/stats", headers=emp_headers, params=seed_params)
     assert r.status_code == 200
     body = r.json()
     assert body["present"] >= 1
@@ -144,8 +144,8 @@ def test_supervisor_overview_department_filter(client, chief_headers, db_session
     assert ext == {"EMP003", "SUP002"}
 
 
-def test_supervisor_employee_summary(client, sup_headers, seed_dates):
-    r = client.get("/supervisor/employee/EMP001/summary", headers=sup_headers)
+def test_supervisor_employee_summary(client, sup_headers, seed_dates, seed_params):
+    r = client.get("/supervisor/employee/EMP001/summary", headers=sup_headers, params=seed_params)
     assert r.status_code == 200
     by_date = {d["date"]: d for d in r.json()}
     assert by_date[seed_dates["late"]]["status"] == "present"

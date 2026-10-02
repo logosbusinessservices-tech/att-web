@@ -41,22 +41,22 @@ def test_clean_sequence_no_anomaly():
 
 
 # ── Inline events in the summary ─────────────────────────────────────────────
-def test_summary_includes_events_inline(client, emp_headers, seed_dates):
-    r = client.get("/attendance/summary", headers=emp_headers)
+def test_summary_includes_events_inline(client, emp_headers, seed_dates, seed_params):
+    r = client.get("/attendance/summary", headers=emp_headers, params=seed_params)
     day = next(d for d in r.json() if d["date"] == seed_dates["present"])
     assert len(day["events"]) == 2
     assert {e["direction"] for e in day["events"]} == {"entry", "exit"}
 
 
 # ── Targeted entry/exit disputes ─────────────────────────────────────────────
-def _present_day_events(client, emp_headers, seed_dates):
-    r = client.get("/attendance/summary", headers=emp_headers)
+def _present_day_events(client, emp_headers, seed_dates, seed_params):
+    r = client.get("/attendance/summary", headers=emp_headers, params=seed_params)
     day = next(d for d in r.json() if d["date"] == seed_dates["present"])
     return day["events"]
 
 
-def test_entry_dispute_alters_only_entry(client, emp_headers, sup_headers, seed_dates):
-    events = _present_day_events(client, emp_headers, seed_dates)
+def test_entry_dispute_alters_only_entry(client, emp_headers, sup_headers, seed_dates, seed_params):
+    events = _present_day_events(client, emp_headers, seed_dates, seed_params)
     entry = next(e for e in events if e["direction"] == "entry")
     r = client.post("/disputes", headers=emp_headers, json={
         "for_date": seed_dates["present"], "target_kind": "entry",
@@ -69,14 +69,14 @@ def test_entry_dispute_alters_only_entry(client, emp_headers, sup_headers, seed_
     r = client.post(f"/supervisor/disputes/{did}/approve", headers=sup_headers,
                     json={"entry_time": "09:00"})
     assert r.status_code == 200
-    day = next(d for d in client.get("/attendance/summary", headers=emp_headers).json()
+    day = next(d for d in client.get("/attendance/summary", headers=emp_headers, params=seed_params).json()
                if d["date"] == seed_dates["present"])
     assert day["hours_in_office"] == 9.0
     assert day["adjusted"] is True
 
 
-def test_entry_dispute_requires_entry_time(client, emp_headers, sup_headers, seed_dates):
-    events = _present_day_events(client, emp_headers, seed_dates)
+def test_entry_dispute_requires_entry_time(client, emp_headers, sup_headers, seed_dates, seed_params):
+    events = _present_day_events(client, emp_headers, seed_dates, seed_params)
     entry = next(e for e in events if e["direction"] == "entry")
     did = client.post("/disputes", headers=emp_headers, json={
         "for_date": seed_dates["present"], "target_kind": "entry", "event_id": entry["id"],
@@ -87,8 +87,8 @@ def test_entry_dispute_requires_entry_time(client, emp_headers, sup_headers, see
     assert r.status_code == 400
 
 
-def test_dispute_wrong_direction_rejected(client, emp_headers, seed_dates):
-    events = _present_day_events(client, emp_headers, seed_dates)
+def test_dispute_wrong_direction_rejected(client, emp_headers, seed_dates, seed_params):
+    events = _present_day_events(client, emp_headers, seed_dates, seed_params)
     entry = next(e for e in events if e["direction"] == "entry")
     # Claiming an entry crossing is an 'exit' dispute must fail.
     r = client.post("/disputes", headers=emp_headers, json={
@@ -97,8 +97,8 @@ def test_dispute_wrong_direction_rejected(client, emp_headers, seed_dates):
     assert r.status_code == 400
 
 
-def test_cannot_dispute_another_users_event(client, emp2_headers, emp_headers, seed_dates):
-    events = _present_day_events(client, emp_headers, seed_dates)  # EMP001's events
+def test_cannot_dispute_another_users_event(client, emp2_headers, emp_headers, seed_dates, seed_params):
+    events = _present_day_events(client, emp_headers, seed_dates, seed_params)  # EMP001's events
     entry = next(e for e in events if e["direction"] == "entry")
     r = client.post("/disputes", headers=emp2_headers, json={
         "for_date": seed_dates["present"], "target_kind": "entry", "event_id": entry["id"],

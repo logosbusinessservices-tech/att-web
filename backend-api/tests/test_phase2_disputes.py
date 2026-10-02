@@ -71,7 +71,7 @@ def test_supervisor_sees_dept_disputes(client, emp_headers, sup_headers, seed_da
     assert any(d["external_id"] == "EMP001" for d in r.json())
 
 
-def test_approve_creates_override_and_fixes_status(client, emp_headers, sup_headers, seed_dates):
+def test_approve_creates_override_and_fixes_status(client, emp_headers, sup_headers, seed_dates, seed_params):
     # absent day -> dispute -> approve with injected times -> present + hours
     client.post("/disputes", headers=emp_headers, json={"for_date": seed_dates["absent"]})
     did = client.get("/supervisor/disputes", headers=sup_headers).json()[0]["id"]
@@ -82,7 +82,7 @@ def test_approve_creates_override_and_fixes_status(client, emp_headers, sup_head
     assert r.json()["status"] == "resolved"
 
     # Employee's view now shows the corrected day.
-    summ = client.get("/attendance/summary", headers=emp_headers).json()
+    summ = client.get("/attendance/summary", headers=emp_headers, params=seed_params).json()
     day = next(d for d in summ if d["date"] == seed_dates["absent"])
     assert day["status"] == "present"
     assert day["adjusted"] is True
@@ -96,7 +96,7 @@ def test_approve_requires_some_change(client, emp_headers, sup_headers, seed_dat
     assert r.status_code == 400
 
 
-def test_reject_dispute(client, emp_headers, sup_headers, seed_dates):
+def test_reject_dispute(client, emp_headers, sup_headers, seed_dates, seed_params):
     client.post("/disputes", headers=emp_headers, json={"for_date": seed_dates["late"]})
     did = client.get("/supervisor/disputes", headers=sup_headers).json()[0]["id"]
     r = client.post(f"/supervisor/disputes/{did}/reject", headers=sup_headers,
@@ -104,13 +104,13 @@ def test_reject_dispute(client, emp_headers, sup_headers, seed_dates):
     assert r.status_code == 200
     assert r.json()["status"] == "rejected"
     # And the underlying attendance is unchanged.
-    summ = client.get("/attendance/summary", headers=emp_headers).json()
+    summ = client.get("/attendance/summary", headers=emp_headers, params=seed_params).json()
     day = next(d for d in summ if d["date"] == seed_dates["late"])
     assert day["status"] == "present"
 
 
 # ── Direct override (no dispute) ─────────────────────────────────────────────
-def test_direct_override_absent_to_present(client, sup_headers, emp_headers, seed_dates):
+def test_direct_override_absent_to_present(client, sup_headers, emp_headers, seed_dates, seed_params):
     r = client.post("/supervisor/overrides", headers=sup_headers,
                     json={"external_id": "EMP001", "for_date": seed_dates["absent"],
                           "new_status": "present", "reason": "offsite duty"})
@@ -119,19 +119,19 @@ def test_direct_override_absent_to_present(client, sup_headers, emp_headers, see
     assert body["original_status"] == "absent"
     assert body["new_status"] == "present"
 
-    summ = client.get("/attendance/summary", headers=emp_headers).json()
+    summ = client.get("/attendance/summary", headers=emp_headers, params=seed_params).json()
     day = next(d for d in summ if d["date"] == seed_dates["absent"])
     assert day["status"] == "present"
     assert day["adjusted"] is True
 
 
-def test_latest_override_wins(client, sup_headers, emp_headers, seed_dates):
+def test_latest_override_wins(client, sup_headers, emp_headers, seed_dates, seed_params):
     d = seed_dates["absent"]
     client.post("/supervisor/overrides", headers=sup_headers,
                 json={"external_id": "EMP001", "for_date": d, "new_status": "present"})
     client.post("/supervisor/overrides", headers=sup_headers,
                 json={"external_id": "EMP001", "for_date": d, "new_status": "absent"})
-    summ = client.get("/attendance/summary", headers=emp_headers).json()
+    summ = client.get("/attendance/summary", headers=emp_headers, params=seed_params).json()
     day = next(x for x in summ if x["date"] == d)
     assert day["status"] == "absent"  # most recent override wins
 

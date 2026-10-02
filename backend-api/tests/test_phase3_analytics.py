@@ -15,8 +15,8 @@ def test_analytics_requires_auth(client):
     assert client.get("/supervisor/analytics/summary").status_code == 401
 
 
-def test_summary_kpis(client, sup_headers):
-    r = client.get("/supervisor/analytics/summary", headers=sup_headers)
+def test_summary_kpis(client, sup_headers, seed_params):
+    r = client.get("/supervisor/analytics/summary", headers=sup_headers, params=seed_params)
     assert r.status_code == 200
     body = r.json()
     # EMP001 has present days seeded; scoped to Operations (EMP001, EMP002).
@@ -56,8 +56,8 @@ def test_by_department(client, sup_headers):
     assert names == {"Operations"}
 
 
-def test_source_split_counts_camera(client, sup_headers):
-    r = client.get("/supervisor/analytics/source-split", headers=sup_headers)
+def test_source_split_counts_camera(client, sup_headers, seed_params):
+    r = client.get("/supervisor/analytics/source-split", headers=sup_headers, params=seed_params)
     assert r.status_code == 200
     body = r.json()
     assert body["camera"] >= 4  # EMP001 has 4 seeded camera crossings
