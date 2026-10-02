@@ -22,6 +22,7 @@ function Card({ item, onDecide, selected, onToggle, onRecall }) {
           <AuthImage
             src={api.fieldSelfieUrl(item.event_id)}
             alt=""
+            zoomable
             className="w-16 h-16 rounded-lg object-cover bg-slate-100 shrink-0"
           />
         )}
