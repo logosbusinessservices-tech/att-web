@@ -17,6 +17,10 @@ venv/
 # Edge offline queue
 edge_queue/
 
+# Field attendance audit selfies + avatars (dev filesystem storage; object storage in prod)
+backend-api/data/field_selfies/
+backend-api/data/avatars/
+
 # Node / frontend
 node_modules/
 dist/

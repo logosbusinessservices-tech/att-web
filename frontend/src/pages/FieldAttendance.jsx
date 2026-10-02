@@ -9,7 +9,14 @@ import { syncFieldQueue } from '../lib/fieldSync.js'
 // Liveness thresholds: a blink = eye-blink score rises above HIGH then falls below LOW.
 const BLINK_HIGH = 0.55
 const BLINK_LOW = 0.25
-const MIN_FACE_W = 0.20   // face must fill enough of the frame (normalized width)
+const MIN_FACE_W = 0.20    // face must fill enough of the frame (normalized width)
+const CENTER_MIN = 0.30    // face centre must sit within the middle of the frame
+const CENTER_MAX = 0.70
+const STEADY_FRAMES = 4    // hold a good, centred face this many frames before we trust it
+const DETECT_INTERVAL_MS = 90  // throttle detection so mobile GPUs don't choke
+// Fallback liveness: if a clear, steady face is held this long without a detected
+// blink (poor light / phone camera), capture anyway so the user is never stuck.
+const BLINK_FALLBACK_MS = 4000
 
 const isNetworkErr = (m) => /Failed to fetch|NetworkError|load failed/i.test(m || '')
 
@@ -22,8 +29,16 @@ export default function FieldAttendance({ back }) {
   const canvasRef = useRef(null)
   const rafRef = useRef(0)
   const streamRef = useRef(null)
-  const blinkArmed = useRef(false)   // saw eyes-open, waiting for a blink
   const capturedRef = useRef(false)  // guard against double-capture
+
+  // Liveness loop bookkeeping (refs so the camera effect never re-runs on change).
+  const blinkArmed = useRef(false)   // saw eyes-open, waiting for a blink
+  const steadyRef = useRef(0)        // consecutive good frames
+  const goodSinceRef = useRef(0)     // timestamp a clear face first appeared (fallback timer)
+
+  // Latest GPS/direction, read by the capture closure without re-arming the camera.
+  const gpsRef = useRef(null)
+  const directionRef = useRef('entry')
 
   const [phase, setPhase] = useState(enabled ? 'loading' : 'blocked') // loading|scanning|submitting|done|error
   const [direction, setDirection] = useState('entry')
@@ -33,6 +48,7 @@ export default function FieldAttendance({ back }) {
   const [gps, setGps] = useState(null) // { lat, lon, accuracy } | null
   const [pending, setPending] = useState(0)   // queued offline scans
   const [syncMsg, setSyncMsg] = useState('')
+  const [restartKey, setRestartKey] = useState(0) // bump to re-arm the camera on retry
 
   const refreshPending = useCallback(async () => {
     try { setPending(await queueCount()) } catch { /* ignore */ }
@@ -54,7 +70,7 @@ export default function FieldAttendance({ back }) {
     }
   }, [])
 
-  async function queueOffline(payload) {
+  const queueOffline = useCallback(async (payload) => {
     try {
       await enqueue({
         blob: payload.selfie, direction: payload.direction,
@@ -68,17 +84,19 @@ export default function FieldAttendance({ back }) {
       setError('Could not save offline: ' + e.message)
       setPhase('error')
     }
-  }
+  }, [refreshPending])
 
+  // Submit reads GPS/direction from refs so it's stable and never re-arms the camera.
   const submit = useCallback(async (blob) => {
     setPhase('submitting')
     setHint('Verifying…')
+    const g = gpsRef.current
     const payload = {
       selfie: blob,
-      direction,
-      latitude: gps?.lat ?? null,
-      longitude: gps?.lon ?? null,
-      accuracy: gps?.accuracy ?? null,
+      direction: directionRef.current,
+      latitude: g?.lat ?? null,
+      longitude: g?.lon ?? null,
+      accuracy: g?.accuracy ?? null,
       capturedAt: new Date().toISOString(),  // real capture time, for offline replay
     }
     if (!navigator.onLine) { return queueOffline(payload) }
@@ -91,27 +109,37 @@ export default function FieldAttendance({ back }) {
       setError(e.message)
       setPhase('error')
     }
-  }, [direction, gps]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [queueOffline])
 
   const capture = useCallback(() => {
     if (capturedRef.current) return
     capturedRef.current = true
-    stopCamera()
+    cancelAnimationFrame(rafRef.current)
     const video = videoRef.current
     const canvas = canvasRef.current
     if (!video || !canvas) return
+    // Snap the full frame (face + background) before tearing the camera down.
     canvas.width = video.videoWidth
     canvas.height = video.videoHeight
     canvas.getContext('2d').drawImage(video, 0, 0)
+    stopCamera()
     canvas.toBlob((blob) => { if (blob) submit(blob) }, 'image/jpeg', 0.9)
   }, [stopCamera, submit])
+
+  // Keep the latest capture closure reachable from the (stable) detection loop.
+  const captureRef = useRef(capture)
+  useEffect(() => { captureRef.current = capture }, [capture])
 
   // Start GPS (parallel — server marks the scan pending if it's missing/coarse).
   useEffect(() => {
     if (!enabled || !navigator.geolocation) return
     const id = navigator.geolocation.watchPosition(
-      (pos) => setGps({ lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy }),
-      () => setGps(null),
+      (pos) => {
+        const g = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy: pos.coords.accuracy }
+        gpsRef.current = g
+        setGps(g)
+      },
+      () => { gpsRef.current = null; setGps(null) },
       { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
     )
     return () => navigator.geolocation.clearWatch(id)
@@ -127,15 +155,24 @@ export default function FieldAttendance({ back }) {
   }, [refreshPending, runSync])
 
   // Load model + fetch next direction, then start camera + liveness loop.
+  // Depends only on [enabled, restartKey] so GPS/direction updates never tear the
+  // camera down (that was the cause of the flicker / black-screen).
   useEffect(() => {
     if (!enabled) return
     let cancelled = false
+    capturedRef.current = false
+    blinkArmed.current = false
+    steadyRef.current = 0
+    goodSinceRef.current = 0
 
     async function start() {
       try {
         const [landmarker, status] = await Promise.all([getFaceLandmarker(), api.fieldStatus().catch(() => null)])
         if (cancelled) return
-        if (status?.next_direction) setDirection(status.next_direction)
+        if (status?.next_direction) {
+          directionRef.current = status.next_direction
+          setDirection(status.next_direction)
+        }
 
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return }
@@ -144,35 +181,67 @@ export default function FieldAttendance({ back }) {
         video.srcObject = stream
         await video.play()
         setPhase('scanning')
-        setHint('Center your face and blink')
+        setHint('Center your face in the frame')
 
-        let last = -1
+        let lastDetect = 0
         const loop = () => {
           if (cancelled || capturedRef.current) return
+          rafRef.current = requestAnimationFrame(loop)
+
           const now = performance.now()
-          if (video.currentTime !== last) {
-            last = video.currentTime
-            const res = landmarker.detectForVideo(video, now)
-            const box = faceBox(res)
-            const blink = blinkScores(res)
-            if (!box) {
-              setHint('No face detected — center your face')
-              blinkArmed.current = false
-            } else if (box.w < MIN_FACE_W) {
-              setHint('Move a little closer')
-              blinkArmed.current = false
-            } else if (blink) {
-              const score = Math.max(blink.left, blink.right)
-              if (score < BLINK_LOW) blinkArmed.current = true         // eyes open — armed
-              if (blinkArmed.current && score > BLINK_HIGH) {          // then a blink
-                setHint('Got it! Capturing…')
-                capture()
-                return
-              }
-              setHint('Blink to confirm you\u2019re live')
+          if (now - lastDetect < DETECT_INTERVAL_MS) return
+          if (video.readyState < 2 || !video.videoWidth) return  // frame not ready yet
+          lastDetect = now
+
+          const res = landmarker.detectForVideo(video, now)
+          const box = faceBox(res)
+          const blink = blinkScores(res)
+
+          const centred = box && box.cx > CENTER_MIN && box.cx < CENTER_MAX
+            && box.cy > CENTER_MIN && box.cy < CENTER_MAX
+
+          if (!box) {
+            setHint('No face detected — center your face')
+            blinkArmed.current = false; steadyRef.current = 0; goodSinceRef.current = 0
+            return
+          }
+          if (box.w < MIN_FACE_W) {
+            setHint('Move a little closer')
+            blinkArmed.current = false; steadyRef.current = 0; goodSinceRef.current = 0
+            return
+          }
+          if (!centred) {
+            setHint('Center your face in the frame')
+            blinkArmed.current = false; steadyRef.current = 0; goodSinceRef.current = 0
+            return
+          }
+
+          // Clear, centred face — need it held steady before we trust it.
+          steadyRef.current += 1
+          if (steadyRef.current < STEADY_FRAMES) {
+            setHint('Hold still…')
+            return
+          }
+          if (goodSinceRef.current === 0) goodSinceRef.current = now
+
+          // Primary liveness: a real blink (eyes open, then closed).
+          if (blink) {
+            const score = Math.max(blink.left, blink.right)
+            if (score < BLINK_LOW) blinkArmed.current = true
+            if (blinkArmed.current && score > BLINK_HIGH) {
+              setHint('Got it! Capturing…')
+              captureRef.current()
+              return
             }
           }
-          rafRef.current = requestAnimationFrame(loop)
+
+          // Fallback liveness: clear steady face held long enough without a blink.
+          if (now - goodSinceRef.current > BLINK_FALLBACK_MS) {
+            setHint('Capturing…')
+            captureRef.current()
+            return
+          }
+          setHint('Blink to confirm you\u2019re live')
         }
         rafRef.current = requestAnimationFrame(loop)
       } catch (e) {
@@ -183,18 +252,18 @@ export default function FieldAttendance({ back }) {
     }
     start()
     return () => { cancelled = true; stopCamera() }
-  }, [enabled, capture, stopCamera])
+  }, [enabled, restartKey, stopCamera])
 
   function reset() {
     capturedRef.current = false
     blinkArmed.current = false
+    steadyRef.current = 0
+    goodSinceRef.current = 0
     setResult(null)
     setError('')
-    setPhase('loading')
     setHint('Loading face scanner…')
-    // Re-run the start effect by toggling a key via location reload of state:
-    // simplest is to re-mount through a full re-init.
-    window.location.reload()
+    setPhase('loading')
+    setRestartKey((k) => k + 1)  // re-arm the camera in place (no page reload)
   }
 
   const title = `Field ${direction === 'exit' ? 'Check-out' : 'Check-in'}`
@@ -235,16 +304,19 @@ export default function FieldAttendance({ back }) {
             </div>
 
             <div className="relative aspect-[3/4] w-full rounded-2xl overflow-hidden bg-black">
-              {/* Mirror the preview so it feels like a selfie. */}
+              {/* Mirror the preview so it feels like a selfie. Stays visible the whole
+                  time — we only overlay a translucent caption, never a black screen. */}
               <video ref={videoRef} playsInline muted className="w-full h-full object-cover -scale-x-100" />
               <canvas ref={canvasRef} className="hidden" />
 
-              {(phase === 'loading' || phase === 'submitting') && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white text-sm">
-                  {hint}
+              {/* Loading: only shown briefly before the stream is live. */}
+              {phase === 'loading' && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-white text-sm">
+                  <span className="animate-pulse">{hint}</span>
                 </div>
               )}
 
+              {/* Framing guide + live instructions while scanning. */}
               {phase === 'scanning' && (
                 <>
                   <div className="absolute inset-0 border-[3px] border-white/40 rounded-2xl m-8 pointer-events-none" />
@@ -252,6 +324,14 @@ export default function FieldAttendance({ back }) {
                     {hint}
                   </div>
                 </>
+              )}
+
+              {/* Verifying: keep the (frozen) captured frame visible under a slim band. */}
+              {phase === 'submitting' && (
+                <div className="absolute bottom-3 inset-x-0 flex items-center justify-center gap-2 text-white text-sm bg-black/50 py-1.5">
+                  <span className="inline-block w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  {hint}
+                </div>
               )}
 
               {phase === 'done' && result && (
@@ -265,7 +345,7 @@ export default function FieldAttendance({ back }) {
                     : '⏳'}</div>
                   <p className="font-semibold">{result.message}</p>
                   {result.review_status === 'pending' && (
-                    <p className="text-xs mt-1 opacity-90">Sent to your supervisor for approval.</p>
+                    <p className="text-xs mt-1 opacity-90">Your photo was sent to your supervisor for approval.</p>
                   )}
                 </div>
               )}

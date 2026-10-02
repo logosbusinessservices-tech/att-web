@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     # Min seconds between two same-direction field scans (anti double-punch).
     field_duplicate_window_s: int = 120
     # Keep the audit selfie this many days, then purge (metadata is kept).
-    field_selfie_retention_days: int = 60
+    field_selfie_retention_days: int = 30
     # In non-prod, the check-in response includes the match similarity for debugging.
     field_debug_return_similarity: bool = True
     # Where audit selfies are stored (filesystem in dev; object storage in prod).
