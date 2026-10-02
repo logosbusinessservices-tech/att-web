@@ -1,4 +1,5 @@
 import AppHeader from '../components/AppHeader.jsx'
+import AuthImage from '../components/AuthImage.jsx'
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth.jsx'
@@ -107,7 +108,7 @@ export default function Profile({ back = '/employee' }) {
         <div className="flex flex-col items-center py-6">
           <div className="w-20 h-20 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center text-2xl font-semibold">
             {avatarSrc
-              ? <img src={avatarSrc} alt="" className="w-full h-full object-cover" />
+              ? <AuthImage src={avatarSrc} alt="" className="w-full h-full object-cover" fallback={initials} />
               : initials}
           </div>
           <button onClick={() => fileRef.current?.click()} disabled={busy}

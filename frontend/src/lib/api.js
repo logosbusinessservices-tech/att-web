@@ -29,10 +29,21 @@ async function handle(res) {
   return res.status === 204 ? null : res.json()
 }
 
+// Fetch an auth-protected image/binary with the bearer token and hand back an
+// object URL. `<img src>` can't send the Authorization header, so protected
+// images must be loaded this way (see AuthImage). Caller revokes the URL.
+async function blobUrl(url) {
+  const res = await fetch(url, { headers: authHeaders() })
+  if (!res.ok) throw new Error(res.statusText || 'Could not load image')
+  return URL.createObjectURL(await res.blob())
+}
+
 export const api = {
   async health() {
     return handle(await fetch(`${BASE}/health`))
   },
+  // Load an auth-protected image as an object URL (used by AuthImage).
+  blobUrl,
 
   // OAuth2 password form: backend expects form-encoded username/password.
   async login(username, password) {

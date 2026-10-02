@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import AppHeader from '../components/AppHeader.jsx'
+import AuthImage from '../components/AuthImage.jsx'
 import { api } from '../lib/api.js'
 import { fmtDayLabel, fmtTime } from '../lib/format.js'
 
@@ -18,7 +19,7 @@ function Card({ item, onDecide, selected, onToggle, onRecall }) {
         <input type="checkbox" className="mt-1 w-5 h-5 accent-slate-900 shrink-0"
           checked={selected} onChange={() => onToggle(item.event_id)} disabled={item.delegated} />
         {item.selfie_url && (
-          <img
+          <AuthImage
             src={api.fieldSelfieUrl(item.event_id)}
             alt=""
             className="w-16 h-16 rounded-lg object-cover bg-slate-100 shrink-0"

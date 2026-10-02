@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import AppHeader from '../components/AppHeader.jsx'
+import AuthImage from '../components/AuthImage.jsx'
 import { api } from '../lib/api.js'
 import { fmtDayLabel, fmtHours, fmtTime, statusClass, statusLabel } from '../lib/format.js'
 
@@ -23,7 +24,7 @@ function FieldTaskCard({ task, onDone, setError }) {
     <div className="bg-white rounded-xl shadow-sm p-3">
       <div className="flex gap-3">
         {f.selfie_url && (
-          <img src={api.assistantFieldSelfieUrl(f.event_id)} alt=""
+          <AuthImage src={api.assistantFieldSelfieUrl(f.event_id)} alt=""
             className="w-16 h-16 rounded-lg object-cover bg-slate-100 shrink-0" />
         )}
         <div className="flex-1 min-w-0">
