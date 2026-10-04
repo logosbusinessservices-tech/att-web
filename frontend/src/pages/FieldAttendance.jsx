@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import AppHeader from '../components/AppHeader.jsx'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/auth.jsx'
@@ -22,6 +23,7 @@ const isNetworkErr = (m) => /Failed to fetch|NetworkError|load failed/i.test(m |
 
 export default function FieldAttendance({ back }) {
   const { user } = useAuth()
+  const navigate = useNavigate()
   const home = user?.role === 'supervisor' ? '/supervisor' : '/employee'
   const enabled = !!user?.field_scan_enabled
 
@@ -360,7 +362,13 @@ export default function FieldAttendance({ back }) {
 
             {(phase === 'done' || phase === 'error') && (
               <div className="flex gap-2">
-                <button onClick={reset} className="flex-1 bg-white text-slate-900 rounded-lg py-2.5 font-medium">
+                <button
+                  onClick={() => {
+                    if (phase === 'error') { reset(); return }
+                    stopCamera()
+                    navigate(back || home)
+                  }}
+                  className="flex-1 bg-white text-slate-900 rounded-lg py-2.5 font-medium">
                   {phase === 'error' ? 'Try again' : 'Done'}
                 </button>
               </div>
