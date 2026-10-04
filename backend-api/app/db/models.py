@@ -12,10 +12,11 @@ identical to the pipeline's SQLite BLOB format, so cosine matching is a plain
 dot product of L2-normalized vectors. pgvector is a targeted prod optimization.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -39,9 +40,36 @@ class Department(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    # Sentinel row for "Other": when picked, the typed value lives in
+    # Person.department_custom. Analytics roll all customs under this one bucket.
+    is_other: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     persons: Mapped[list["Person"]] = relationship(back_populates="department")
+
+
+# ── Designations & Employment types (new lookup tables) ──────────────────────
+class Designation(Base):
+    """Managed job-title list for the onboarding dropdown. An `is_other` row lets
+    a hand-typed value be captured in Person.designation_custom."""
+
+    __tablename__ = "designations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    is_other: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class EmploymentType(Base):
+    """Managed employment-type list (Contract/Regular/…) with an `is_other` row."""
+
+    __tablename__ = "employment_types"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    is_other: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class Station(Base):
@@ -89,6 +117,15 @@ class Person(Base):
     email: Mapped[str | None] = mapped_column(String)
     phone: Mapped[str | None] = mapped_column(String)
     blood_group: Mapped[str | None] = mapped_column(String)
+    date_of_birth: Mapped[date | None] = mapped_column(Date)
+    # Designation / employment type: FK to the managed list, plus a `*_custom`
+    # free-text value used only when the chosen row is the "Other" sentinel.
+    designation_id: Mapped[int | None] = mapped_column(ForeignKey("designations.id"))
+    designation_custom: Mapped[str | None] = mapped_column(String)
+    employment_type_id: Mapped[int | None] = mapped_column(ForeignKey("employment_types.id"))
+    employment_type_custom: Mapped[str | None] = mapped_column(String)
+    # Typed value when the chosen department is the "Other" sentinel.
+    department_custom: Mapped[str | None] = mapped_column(String)
     password_hash: Mapped[str | None] = mapped_column(String)
     # True right after onboarding (default password == employee code). The UI
     # nags them to set a real password; supervisors are notified if they don't.
@@ -103,6 +140,8 @@ class Person(Base):
 
     department: Mapped["Department | None"] = relationship(back_populates="persons")
     home_station: Mapped["Station | None"] = relationship(back_populates="persons")
+    designation: Mapped["Designation | None"] = relationship()
+    employment_type: Mapped["EmploymentType | None"] = relationship()
     embeddings: Mapped[list["FaceEmbedding"]] = relationship(
         back_populates="person", cascade="all, delete-orphan"
     )

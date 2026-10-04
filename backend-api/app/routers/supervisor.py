@@ -23,7 +23,9 @@ from app.db.models import (
     AttendanceEvent,
     DelegatedTask,
     Department,
+    Designation,
     Dispute,
+    EmploymentType,
     FaceEmbedding,
     Person,
     Station,
@@ -632,6 +634,8 @@ def _seed_avatar_from(person: Person, images: list[bytes]) -> None:
 def _signup_out(db: Session, p: Person) -> SignupOut:
     dept = db.get(Department, p.department_id) if p.department_id else None
     station = db.get(Station, p.home_station_id) if p.home_station_id else None
+    desig = db.get(Designation, p.designation_id) if p.designation_id else None
+    emp_type = db.get(EmploymentType, p.employment_type_id) if p.employment_type_id else None
     assigned = p.external_id if not (p.external_id or "").startswith("SIGNUP-") else None
     return SignupOut(
         id=p.id,
@@ -641,6 +645,14 @@ def _signup_out(db: Session, p: Person) -> SignupOut:
         blood_group=p.blood_group,
         department_id=p.department_id,
         department_name=dept.name if dept else None,
+        department_custom=p.department_custom,
+        designation_id=p.designation_id,
+        designation_name=desig.name if desig else None,
+        designation_custom=p.designation_custom,
+        employment_type_id=p.employment_type_id,
+        employment_type_name=emp_type.name if emp_type else None,
+        employment_type_custom=p.employment_type_custom,
+        date_of_birth=p.date_of_birth,
         home_station_id=p.home_station_id,
         home_station_name=station.name if station else None,
         status=p.status,
@@ -954,6 +966,8 @@ def _settings_out(db: Session, person: Person) -> EmployeeSettingsOut:
     station = db.get(Station, person.home_station_id) if person.home_station_id else None
     dept = db.get(Department, person.department_id) if person.department_id else None
     manager = db.get(Person, person.manager_id) if person.manager_id else None
+    desig = db.get(Designation, person.designation_id) if person.designation_id else None
+    emp_type = db.get(EmploymentType, person.employment_type_id) if person.employment_type_id else None
     return EmployeeSettingsOut(
         external_id=person.external_id,
         display_name=person.display_name,
@@ -963,12 +977,88 @@ def _settings_out(db: Session, person: Person) -> EmployeeSettingsOut:
         role=person.role,
         department_id=person.department_id,
         department_name=dept.name if dept else None,
+        department_custom=person.department_custom,
+        designation_id=person.designation_id,
+        designation_name=desig.name if desig else None,
+        designation_custom=person.designation_custom,
+        employment_type_id=person.employment_type_id,
+        employment_type_name=emp_type.name if emp_type else None,
+        employment_type_custom=person.employment_type_custom,
+        date_of_birth=person.date_of_birth,
         manager_id=person.manager_id,
         manager_name=manager.display_name if manager else None,
         home_station_id=person.home_station_id,
         home_station_name=station.name if station else None,
         field_scan_enabled=bool(person.field_scan_enabled),
     )
+
+
+def _resolve_lookup(db: Session, model, choice_id: int, custom: str | None, label: str):
+    """Validate a lookup choice for a settings edit; return (id, custom_or_None).
+    When the chosen row is the `Other` sentinel the typed value is required."""
+    row = db.get(model, choice_id)
+    if row is None:
+        raise HTTPException(status_code=400, detail=f"{label} not found")
+    if row.is_other:
+        text = (custom or "").strip()
+        if not text:
+            raise HTTPException(status_code=400, detail=f"Enter the {label.lower()} name")
+        return choice_id, text
+    return choice_id, None
+
+
+def apply_employee_settings(db: Session, person: Person, body: EmployeeSettingsUpdate) -> None:
+    """Apply an employee settings patch to `person` (no auth/scope checks here).
+
+    Shared by the department-scoped supervisor endpoint and the global EA
+    (super-admin) endpoint, so both behave identically.
+    """
+    if body.role is not None:
+        if body.role not in ("employee", "supervisor"):
+            raise HTTPException(status_code=400, detail="Invalid role")
+        person.role = body.role
+    if body.department_id is not None:
+        dept = db.get(Department, body.department_id)
+        if dept is None:
+            raise HTTPException(status_code=400, detail="Department not found")
+        person.department_id = body.department_id
+        if dept.is_other:
+            text = (body.department_custom or "").strip()
+            if not text:
+                raise HTTPException(status_code=400, detail="Enter the department name")
+            person.department_custom = text
+        else:
+            person.department_custom = None
+    elif body.department_custom is not None:
+        person.department_custom = body.department_custom.strip() or None
+    if body.designation_id is not None:
+        person.designation_id, person.designation_custom = _resolve_lookup(
+            db, Designation, body.designation_id, body.designation_custom, "Designation"
+        )
+    if body.employment_type_id is not None:
+        person.employment_type_id, person.employment_type_custom = _resolve_lookup(
+            db, EmploymentType, body.employment_type_id, body.employment_type_custom,
+            "Employment type",
+        )
+    if body.date_of_birth is not None:
+        person.date_of_birth = body.date_of_birth
+    if body.manager_id is not None:
+        mgr = db.get(Person, body.manager_id)
+        if mgr is None or mgr.role != "supervisor":
+            raise HTTPException(status_code=400, detail="Manager must be a supervisor")
+        person.manager_id = body.manager_id
+    if body.display_name is not None:
+        person.display_name = body.display_name
+    if body.phone is not None:
+        person.phone = body.phone
+    if body.email is not None:
+        person.email = body.email
+    if body.blood_group is not None:
+        person.blood_group = body.blood_group
+    if body.home_station_id is not None:
+        person.home_station_id = body.home_station_id
+    if body.field_scan_enabled is not None:
+        person.field_scan_enabled = body.field_scan_enabled
 
 
 @router.get("/supervisors", response_model=list[SupervisorOut])
@@ -1013,32 +1103,7 @@ def update_employee_settings(
     if person is None:
         raise HTTPException(status_code=404, detail="Employee not found")
     _assert_same_department(current, person)
-
-    if body.role is not None:
-        if body.role not in ("employee", "supervisor"):
-            raise HTTPException(status_code=400, detail="Invalid role")
-        person.role = body.role
-    if body.department_id is not None:
-        if db.get(Department, body.department_id) is None:
-            raise HTTPException(status_code=400, detail="Department not found")
-        person.department_id = body.department_id
-    if body.manager_id is not None:
-        mgr = db.get(Person, body.manager_id)
-        if mgr is None or mgr.role != "supervisor":
-            raise HTTPException(status_code=400, detail="Manager must be a supervisor")
-        person.manager_id = body.manager_id
-    if body.display_name is not None:
-        person.display_name = body.display_name
-    if body.phone is not None:
-        person.phone = body.phone
-    if body.email is not None:
-        person.email = body.email
-    if body.blood_group is not None:
-        person.blood_group = body.blood_group
-    if body.home_station_id is not None:
-        person.home_station_id = body.home_station_id
-    if body.field_scan_enabled is not None:
-        person.field_scan_enabled = body.field_scan_enabled
+    apply_employee_settings(db, person, body)
     db.commit()
     db.refresh(person)
     return _settings_out(db, person)

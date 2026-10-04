@@ -11,7 +11,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import AttendanceEvent, Department, Person
+from app.db.models import AttendanceEvent, Department, Designation, EmploymentType, Person
 from app.services import attendance_service as svc
 from app.services import corrections
 
@@ -139,6 +139,46 @@ def by_department(db: Session, from_date: date, to_date: date, types: str | None
             "headcount": a["head"],
         })
     out.sort(key=lambda x: x["name"] or "")
+    return out
+
+
+def by_attribute(db: Session, from_date: date, to_date: date, attribute: str,
+                 types: str | None = None, department_id: int | None = None) -> list[dict]:
+    """Attendance rollup grouped by designation or employment type.
+
+    Persons on the 'Other' row group under a single 'Other' bucket; persons with
+    no value fall under 'Unassigned'. (The per-person custom text is still kept
+    on the account for drill-down; this view is the clean roll-up.)
+    """
+    if attribute == "designation":
+        names = {r.id: r.name for r in db.execute(select(Designation)).scalars().all()}
+        attr = "designation_id"
+    else:
+        names = {r.id: r.name for r in db.execute(select(EmploymentType)).scalars().all()}
+        attr = "employment_type_id"
+    agg: dict[str, dict] = defaultdict(lambda: {"present": 0, "absent": 0, "hours": 0.0, "head": 0})
+    for p in _people(db, department_id, types):
+        key = names.get(getattr(p, attr), "Unassigned")
+        a = agg[key]
+        a["head"] += 1
+        for d in _person_days(db, p, from_date, to_date):
+            if d["status"] == "present":
+                a["present"] += 1
+            elif d["status"] == "absent":
+                a["absent"] += 1
+            a["hours"] += d["hours_in_office"]
+    out = [
+        {
+            "key": key,
+            "present": a["present"],
+            "absent": a["absent"],
+            "total_hours": round(a["hours"], 2),
+            "attendance_pct": _pct(a["present"], a["absent"]),
+            "headcount": a["head"],
+        }
+        for key, a in agg.items()
+    ]
+    out.sort(key=lambda x: x["key"] or "")
     return out
 
 

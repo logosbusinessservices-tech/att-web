@@ -152,6 +152,24 @@ class StationOut(BaseModel):
         from_attributes = True
 
 
+class DesignationOut(BaseModel):
+    id: int
+    name: str
+    is_other: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class EmploymentTypeOut(BaseModel):
+    id: int
+    name: str
+    is_other: bool = False
+
+    class Config:
+        from_attributes = True
+
+
 # ── Analytics (supervisor dashboards) ────────────────────────────────────────
 class AnalyticsSummary(BaseModel):
     present: int
@@ -173,6 +191,17 @@ class TrendPoint(BaseModel):
 class DeptStat(BaseModel):
     department_id: int | None = None
     name: str
+    present: int
+    absent: int
+    total_hours: float
+    attendance_pct: float
+    headcount: int
+
+
+class DimensionStat(BaseModel):
+    """Attendance rollup grouped by a profile attribute (designation / employment
+    type). Custom 'Other' entries roll up under the single 'Other' bucket."""
+    key: str
     present: int
     absent: int
     total_hours: float
@@ -366,9 +395,14 @@ class SignupOtpRequest(BaseModel):
 
 class SignupCreate(BaseModel):
     phone: str
-    code: str                        # OTP proving the phone is theirs
     display_name: str
     department_id: int
+    department_custom: str | None = None       # required when department is "Other"
+    designation_id: int | None = None
+    designation_custom: str | None = None       # required when designation is "Other"
+    employment_type_id: int | None = None
+    employment_type_custom: str | None = None   # required when employment type is "Other"
+    date_of_birth: date | None = None
     home_station_id: int | None = None
     email: str | None = None
     blood_group: str | None = None
@@ -383,6 +417,8 @@ class SignupOptionsOut(BaseModel):
     """Public data the sign-up form needs (department + station pickers)."""
     departments: list[DepartmentOut]
     stations: list[StationOut]
+    designations: list[DesignationOut]
+    employment_types: list[EmploymentTypeOut]
 
 
 class SignupOut(BaseModel):
@@ -393,6 +429,14 @@ class SignupOut(BaseModel):
     blood_group: str | None = None
     department_id: int | None = None
     department_name: str | None = None
+    department_custom: str | None = None
+    designation_id: int | None = None
+    designation_name: str | None = None
+    designation_custom: str | None = None
+    employment_type_id: int | None = None
+    employment_type_name: str | None = None
+    employment_type_custom: str | None = None
+    date_of_birth: date | None = None
     home_station_id: int | None = None
     home_station_name: str | None = None
     status: str
@@ -461,7 +505,7 @@ class FieldReviewDecision(BaseModel):
     reason: str | None = None
 
 
-# ── Employee settings / permissions (supervisor-managed) ─────────────────────
+# ── Employee settings / permissions (supervisor- & EA-managed) ────────────────
 class EmployeeSettingsUpdate(BaseModel):
     display_name: str | None = None
     phone: str | None = None
@@ -469,6 +513,12 @@ class EmployeeSettingsUpdate(BaseModel):
     blood_group: str | None = None
     role: str | None = None
     department_id: int | None = None
+    department_custom: str | None = None
+    designation_id: int | None = None
+    designation_custom: str | None = None
+    employment_type_id: int | None = None
+    employment_type_custom: str | None = None
+    date_of_birth: date | None = None
     manager_id: int | None = None
     home_station_id: int | None = None
     field_scan_enabled: bool | None = None
@@ -483,6 +533,14 @@ class EmployeeSettingsOut(BaseModel):
     role: str
     department_id: int | None = None
     department_name: str | None = None
+    department_custom: str | None = None
+    designation_id: int | None = None
+    designation_name: str | None = None
+    designation_custom: str | None = None
+    employment_type_id: int | None = None
+    employment_type_name: str | None = None
+    employment_type_custom: str | None = None
+    date_of_birth: date | None = None
     manager_id: int | None = None
     manager_name: str | None = None
     home_station_id: int | None = None

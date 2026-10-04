@@ -22,7 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.security import hash_password
-from app.db.models import Department, Person, Station
+from app.db.models import Department, Designation, EmploymentType, Person, Station
 from app.services import otp as otp_service
 from app.services.otp import normalize_phone
 from app.services.sms import send_sms
@@ -77,44 +77,86 @@ def request_signup_otp(db: Session, phone: str) -> dict:
     return out
 
 
+def _resolve_choice(db: Session, model, choice_id, custom, label: str):
+    """Validate an optional lookup choice and return (id, custom_to_store).
+
+    When the chosen row is the `Other` sentinel, the typed value is required and
+    preserved; otherwise any custom text is discarded so analytics stay clean.
+    """
+    if choice_id is None:
+        return None, None
+    row = db.get(model, choice_id)
+    if row is None:
+        raise SignupError(f"Select a valid {label}.")
+    if row.is_other:
+        text = (custom or "").strip()
+        if not text:
+            raise SignupError(f"Enter your {label}.")
+        return choice_id, text
+    return choice_id, None
+
+
 def create_signup(
     db: Session,
     *,
     phone: str,
-    code: str,
     display_name: str,
     department_id: int,
+    department_custom: str | None = None,
+    designation_id: int | None = None,
+    designation_custom: str | None = None,
+    employment_type_id: int | None = None,
+    employment_type_custom: str | None = None,
+    date_of_birth=None,
     home_station_id: int | None = None,
     email: str | None = None,
     blood_group: str | None = None,
 ) -> Person:
-    """Verify the OTP and create a pending account for supervisor approval."""
+    """Create a pending account for Executive-Assistant approval (no OTP)."""
     if not (display_name or "").strip():
         raise SignupError("Enter your full name.")
-    if db.get(Department, department_id) is None:
+    if not normalize_phone(phone):
+        raise SignupError("Enter a valid mobile number.")
+
+    dept = db.get(Department, department_id)
+    if dept is None:
         raise SignupError("Select a valid department.")
+    dept_custom = None
+    if dept.is_other:
+        dept_custom = (department_custom or "").strip()
+        if not dept_custom:
+            raise SignupError("Enter your department.")
+
+    desig_id, desig_custom = _resolve_choice(
+        db, Designation, designation_id, designation_custom, "designation"
+    )
+    emp_id, emp_custom = _resolve_choice(
+        db, EmploymentType, employment_type_id, employment_type_custom, "employment type"
+    )
+
     if home_station_id is not None and db.get(Station, home_station_id) is None:
         raise SignupError("Select a valid home station.")
 
-    try:
-        otp_service._consume_challenge(db, _signup_identifier(phone), code)
-    except otp_service.OtpError as exc:
-        raise SignupError(exc.message, status_code=exc.status_code) from exc
-
-    # Re-check after verification (guards a race between request and submit).
+    # Without OTP, the human EA review is the gate; still block obvious dupes.
     if _active_or_pending_with_phone(db, phone) is not None:
         raise SignupError(
             "This number is already registered or awaiting approval.", status_code=409
         )
 
     person = Person(
-        # Placeholder until a supervisor assigns the real employee code at approval.
+        # Placeholder until the EA assigns the real employee code at approval.
         external_id=f"SIGNUP-{uuid.uuid4().hex[:12]}",
         display_name=display_name.strip(),
         role="employee",
         status="pending",
         is_active=False,
         department_id=department_id,
+        department_custom=dept_custom,
+        designation_id=desig_id,
+        designation_custom=desig_custom,
+        employment_type_id=emp_id,
+        employment_type_custom=emp_custom,
+        date_of_birth=date_of_birth,
         home_station_id=home_station_id,
         phone=phone,
         email=email or None,

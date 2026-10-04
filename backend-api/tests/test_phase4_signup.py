@@ -22,9 +22,8 @@ def _dept_id(db, name):
 
 
 def _signup(client, phone, department_id, display_name="New Person", **extra):
-    code = client.post("/auth/signup/otp", json={"phone": phone}).json()["debug_code"]
     return client.post("/auth/signup", json={
-        "phone": phone, "code": code, "display_name": display_name,
+        "phone": phone, "display_name": display_name,
         "department_id": department_id, **extra,
     })
 
@@ -43,19 +42,18 @@ def test_signup_creates_pending_account(client, db_session):
     assert p.external_id.startswith("SIGNUP-")
 
 
-def test_signup_requires_valid_otp(client, db_session):
-    ops = _dept_id(db_session, "Operations")
-    client.post("/auth/signup/otp", json={"phone": "+91 90000 33333"})
+def test_signup_rejects_invalid_department(client):
     r = client.post("/auth/signup", json={
-        "phone": "+91 90000 33333", "code": "000000",
-        "display_name": "Bad Code", "department_id": ops,
+        "phone": "+91 90000 33333",
+        "display_name": "Bad Dept", "department_id": 999999,
     })
-    assert r.status_code in (400, 429)
+    assert r.status_code == 400
 
 
-def test_signup_blocks_existing_phone(client):
+def test_signup_blocks_existing_phone(client, db_session):
     # EMP001 already owns 9000000001 in the seed.
-    r = client.post("/auth/signup/otp", json={"phone": "9000000001"})
+    ops = _dept_id(db_session, "Operations")
+    r = _signup(client, "9000000001", ops)
     assert r.status_code == 409
 
 

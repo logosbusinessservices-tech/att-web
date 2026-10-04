@@ -20,27 +20,45 @@ from sqlalchemy.orm import Session
 
 from app.auth.deps import require_assistant
 from app.db.database import get_db
-from app.db.models import AttendanceEvent, DelegatedTask, Person, Station
+from app.db.models import (
+    AttendanceEvent,
+    DelegatedTask,
+    Department,
+    Designation,
+    EmploymentType,
+    Person,
+    Station,
+)
 from app.schemas import (
     AssistantProfileOut,
     DaySummary,
     DelegatedTaskOut,
+    DepartmentOut,
+    DesignationOut,
     EmployeeCreated,
+    EmployeeSettingsOut,
+    EmployeeSettingsUpdate,
+    EmploymentTypeOut,
     EventAdd,
     EventEdit,
     FieldReviewDecision,
     OverrideCreate,
     OverrideOut,
     SignupApprove,
+    SignupOptionsOut,
     SignupOut,
     SignupReject,
+    StationOut,
+    SupervisorOut,
 )
 from app.routers.supervisor import (
     _day_for,
     _field_review_item,
     _is_enrolled,
     _seed_avatar_from,
+    _settings_out,
     _signup_out,
+    apply_employee_settings,
 )
 from app.services import attendance_service as svc
 from app.services import corrections
@@ -413,3 +431,97 @@ def complete_attendance_task(
     db.commit()
     db.refresh(t)
     return _task_out(db, t)
+
+
+# ── Account administration (EA super-admin: across all departments) ──────────
+@router.get("/accounts", response_model=list[EmployeeSettingsOut])
+def list_accounts(
+    role: str = Query(default="all"),
+    q: str = Query(default=""),
+    _: Person = Depends(require_assistant),
+    db: Session = Depends(get_db),
+):
+    """Every onboarded account across all departments (EA super-admin console)."""
+    stmt = select(Person).where(Person.status == "active").order_by(Person.display_name)
+    if role in ("employee", "supervisor", "chief", "assistant"):
+        stmt = stmt.where(Person.role == role)
+    needle = q.strip().lower()
+    out: list[EmployeeSettingsOut] = []
+    for p in db.execute(stmt).scalars():
+        if needle and needle not in (p.display_name or "").lower() and needle not in (
+            p.external_id or ""
+        ).lower():
+            continue
+        out.append(_settings_out(db, p))
+    return out
+
+
+def _load_account(db: Session, external_id: str) -> Person:
+    person = db.execute(
+        select(Person).where(Person.external_id == external_id)
+    ).scalar_one_or_none()
+    if person is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return person
+
+
+@router.get("/accounts/{external_id}", response_model=EmployeeSettingsOut)
+def get_account(
+    external_id: str,
+    _: Person = Depends(require_assistant),
+    db: Session = Depends(get_db),
+):
+    return _settings_out(db, _load_account(db, external_id))
+
+
+@router.patch("/accounts/{external_id}", response_model=EmployeeSettingsOut)
+def update_account(
+    external_id: str,
+    body: EmployeeSettingsUpdate,
+    _: Person = Depends(require_assistant),
+    db: Session = Depends(get_db),
+):
+    """Edit any account across all departments; may promote employee <-> supervisor."""
+    person = _load_account(db, external_id)
+    apply_employee_settings(db, person, body)
+    db.commit()
+    db.refresh(person)
+    return _settings_out(db, person)
+
+
+@router.get("/supervisors", response_model=list[SupervisorOut])
+def list_all_supervisors(
+    _: Person = Depends(require_assistant),
+    db: Session = Depends(get_db),
+):
+    """All supervisors (for assigning a manager in the account editor)."""
+    rows = db.execute(
+        select(Person).where(Person.role == "supervisor").order_by(Person.display_name)
+    ).scalars().all()
+    return [
+        SupervisorOut(
+            id=p.id, external_id=p.external_id,
+            display_name=p.display_name, department_id=p.department_id,
+        )
+        for p in rows
+    ]
+
+
+@router.get("/ref-options", response_model=SignupOptionsOut)
+def account_ref_options(
+    _: Person = Depends(require_assistant),
+    db: Session = Depends(get_db),
+):
+    """Department / designation / employment-type / station lists for the editor."""
+    departments = db.execute(select(Department).order_by(Department.name)).scalars().all()
+    stations = db.execute(select(Station).order_by(Station.name)).scalars().all()
+    designations = db.execute(select(Designation).order_by(Designation.name)).scalars().all()
+    employment_types = db.execute(
+        select(EmploymentType).order_by(EmploymentType.name)
+    ).scalars().all()
+    return SignupOptionsOut(
+        departments=[DepartmentOut.model_validate(d) for d in departments],
+        stations=[StationOut.model_validate(s) for s in stations],
+        designations=[DesignationOut.model_validate(d) for d in designations],
+        employment_types=[EmploymentTypeOut.model_validate(e) for e in employment_types],
+    )

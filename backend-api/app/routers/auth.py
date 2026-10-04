@@ -8,9 +8,11 @@ from sqlalchemy.orm import Session
 from app.auth.deps import get_current_user, user_out
 from app.auth.security import create_access_token, hash_password, verify_password
 from app.db.database import get_db
-from app.db.models import Department, Person, Station
+from app.db.models import Department, Designation, EmploymentType, Person, Station
 from app.schemas import (
     DepartmentOut,
+    DesignationOut,
+    EmploymentTypeOut,
     OtpRequest,
     OtpRequestAck,
     OtpVerify,
@@ -69,12 +71,18 @@ def me(
 # ── Self sign-up (public) ────────────────────────────────────────────────────
 @router.get("/signup/options", response_model=SignupOptionsOut)
 def signup_options(db: Session = Depends(get_db)):
-    """Public department + station lists the sign-up form needs."""
+    """Public department / station / designation / employment-type lists."""
     departments = db.execute(select(Department).order_by(Department.name)).scalars().all()
     stations = db.execute(select(Station).order_by(Station.name)).scalars().all()
+    designations = db.execute(select(Designation).order_by(Designation.name)).scalars().all()
+    employment_types = db.execute(
+        select(EmploymentType).order_by(EmploymentType.name)
+    ).scalars().all()
     return SignupOptionsOut(
         departments=[DepartmentOut.model_validate(d) for d in departments],
         stations=[StationOut.model_validate(s) for s in stations],
+        designations=[DesignationOut.model_validate(d) for d in designations],
+        employment_types=[EmploymentTypeOut.model_validate(e) for e in employment_types],
     )
 
 
@@ -90,14 +98,19 @@ def signup_otp(body: SignupOtpRequest, db: Session = Depends(get_db)):
 
 @router.post("/signup", response_model=SignupAck, status_code=status.HTTP_201_CREATED)
 def signup(body: SignupCreate, db: Session = Depends(get_db)):
-    """Create a pending account (awaiting supervisor approval)."""
+    """Create a pending account (awaiting Executive-Assistant approval)."""
     try:
         signup_service.create_signup(
             db,
             phone=body.phone,
-            code=body.code,
             display_name=body.display_name,
             department_id=body.department_id,
+            department_custom=body.department_custom,
+            designation_id=body.designation_id,
+            designation_custom=body.designation_custom,
+            employment_type_id=body.employment_type_id,
+            employment_type_custom=body.employment_type_custom,
+            date_of_birth=body.date_of_birth,
             home_station_id=body.home_station_id,
             email=body.email,
             blood_group=body.blood_group,
@@ -106,7 +119,7 @@ def signup(body: SignupCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     return SignupAck(
         status="pending",
-        message="Sign-up received. Your supervisor will review and approve your account.",
+        message="Sign-up received. An administrator will review and approve your account.",
     )
 
 

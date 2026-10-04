@@ -6,7 +6,7 @@ figures come from the same day summarizer, so charts and tables always agree.
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,7 @@ from app.db.models import AttendanceEvent, Person
 from app.schemas import (
     AnalyticsSummary,
     DeptStat,
+    DimensionStat,
     LowAttendanceRow,
     SourceSplit,
     TrendPoint,
@@ -110,6 +111,25 @@ def analytics_by_department(
     department_id = None if _is_chief(current) else current.department_id
     types = _mgmt_types(current, types)
     return analytics.by_department(db, from_date, to_date, types, department_id)
+
+
+@router.get("/by-attribute", response_model=list[DimensionStat])
+def analytics_by_attribute(
+    attribute: str = Query(..., description="designation | employment_type"),
+    from_date: date | None = Query(default=None),
+    to_date: date | None = Query(default=None),
+    department_id: int | None = Query(default=None),
+    types: str | None = Query(default=None),
+    current: Person = Depends(require_supervisor),
+    db: Session = Depends(get_db),
+):
+    """Attendance grouped by designation or employment type (Other = one bucket)."""
+    if attribute not in ("designation", "employment_type"):
+        raise HTTPException(status_code=400, detail="Invalid attribute")
+    from_date, to_date = _range(from_date, to_date)
+    department_id = _dept_scope(current, department_id)
+    types = _mgmt_types(current, types)
+    return analytics.by_attribute(db, from_date, to_date, attribute, types, department_id)
 
 
 @router.get("/source-split", response_model=SourceSplit)
