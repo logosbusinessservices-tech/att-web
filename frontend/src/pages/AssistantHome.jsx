@@ -22,6 +22,7 @@ export default function AssistantHome() {
         )}
         <div className="grid grid-cols-2 gap-y-8 gap-x-4 justify-items-center">
           <MenuButton icon={<ApprovalsIcon />} label="Approve Sign-ups" to="/assistant/signups" />
+          <MenuButton icon={<ProfileIcon />} label="Manage Accounts" to="/assistant/accounts" />
           <MenuButton icon={<DashboardIcon />} label="Delegated Tasks" to="/assistant/tasks" />
           <MenuButton icon={<CalendarIcon />} label="View My Attendance" to="/assistant/attendance" />
           <MenuButton icon={<BellIcon />} label="Notifications" to="/assistant/notifications" />

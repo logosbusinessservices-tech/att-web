@@ -36,6 +36,49 @@ function Kpi({ label, value, tone = 'text-slate-800' }) {
   )
 }
 
+// Attendance rollup grouped by a profile attribute (designation / employment
+// type). Custom 'Other' entries are collapsed into a single 'Other' row.
+function AttributeTable({ title, rows, csvName }) {
+  return (
+    <div className="bg-white rounded-xl shadow-sm p-3">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
+        <button onClick={() => downloadCsv(`${csvName}.csv`, rows)}
+          className="text-[11px] px-2 py-1 rounded bg-slate-100 text-slate-600 hover:bg-slate-200">CSV</button>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-100 text-slate-600">
+            <tr>
+              <th className="text-left px-2 py-1.5 font-medium">Group</th>
+              <th className="text-right px-2 py-1.5 font-medium">Staff</th>
+              <th className="text-right px-2 py-1.5 font-medium">Present</th>
+              <th className="text-right px-2 py-1.5 font-medium">Absent</th>
+              <th className="text-right px-2 py-1.5 font-medium">Attend %</th>
+              <th className="text-right px-2 py-1.5 font-medium">Hours</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.key} className="border-t border-slate-100">
+                <td className="px-2 py-1.5 text-slate-700">{r.key}</td>
+                <td className="px-2 py-1.5 text-right">{r.headcount}</td>
+                <td className="px-2 py-1.5 text-right text-emerald-600">{r.present}</td>
+                <td className="px-2 py-1.5 text-right text-red-600">{r.absent}</td>
+                <td className="px-2 py-1.5 text-right">{r.attendance_pct}%</td>
+                <td className="px-2 py-1.5 text-right">{r.total_hours}</td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr><td colSpan={6} className="text-center text-slate-400 py-4">No data.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function ChartCard({ title, csvName, csvRows, innerRef, children }) {
   const localRef = useRef(null)
   const setRef = (el) => { localRef.current = el; innerRef?.(el) }
@@ -140,6 +183,8 @@ export default function Analytics({ back = '/supervisor' }) {
   const [summary, setSummary] = useState(null)
   const [trend, setTrend] = useState([])
   const [byDept, setByDept] = useState([])
+  const [byDesignation, setByDesignation] = useState([])
+  const [byEmployment, setByEmployment] = useState([])
   const [split, setSplit] = useState(null)
   const [overview, setOverview] = useState([])
   const [lowest, setLowest] = useState([])
@@ -156,15 +201,18 @@ export default function Analytics({ back = '/supervisor' }) {
     setError('')
     const dept = deptId || undefined
     try {
-      const [s, t, bd, sp, ov, lo] = await Promise.all([
+      const [s, t, bd, sp, ov, lo, bdz, bet] = await Promise.all([
         api.analyticsSummary(from, to, dept, typesParam),
         api.analyticsTrend(from, to, dept, granularity, typesParam),
         api.analyticsByDepartment(from, to, typesParam),
         api.analyticsSourceSplit(from, to, dept, typesParam),
         api.supervisorOverview(from, to, dept, typesParam),
         api.analyticsLowest(from, to, dept, 8, typesParam),
+        api.analyticsByAttribute('designation', from, to, dept, typesParam),
+        api.analyticsByAttribute('employment_type', from, to, dept, typesParam),
       ])
       setSummary(s); setTrend(t); setByDept(bd); setSplit(sp); setOverview(ov); setLowest(lo)
+      setByDesignation(bdz); setByEmployment(bet)
     } catch (e) {
       setError(e.message)
     }
@@ -368,6 +416,11 @@ export default function Analytics({ back = '/supervisor' }) {
           </div>
 
           <Matrix rows={matrix} />
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <AttributeTable title="By designation" rows={byDesignation} csvName="by_designation" />
+            <AttributeTable title="By employment type" rows={byEmployment} csvName="by_employment_type" />
+          </div>
 
         <p className="text-[11px] text-slate-400 text-center pt-1">
           Filter by department + staff type. Export the charts (PDF / PPT), each visual (CSV / PNG),

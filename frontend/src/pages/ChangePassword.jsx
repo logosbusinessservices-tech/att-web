@@ -4,6 +4,10 @@ import AppHeader from '../components/AppHeader.jsx'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/auth.jsx'
 
+// OTP 2FA for password changes is disabled for the initial rollout (no SMS).
+// Flip to true (and wire an SMS provider) to restore the phone-code path.
+const OTP_ENABLED = false
+
 export default function ChangePassword({ back }) {
   const { user, refreshUser } = useAuth()
   const navigate = useNavigate()
@@ -81,17 +85,19 @@ export default function ChangePassword({ back }) {
         )}
 
         {/* How to verify */}
-        <div className="flex bg-white rounded-xl shadow-sm p-1">
-          {[['old', 'Current password'], ['otp', 'OTP (2FA)']].map(([m, label]) => (
-            <button
-              key={m}
-              onClick={() => { setMethod(m); setError('') }}
-              className={`flex-1 text-sm py-1.5 rounded-lg ${method === m ? 'bg-slate-900 text-white' : 'text-slate-600'}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {OTP_ENABLED && (
+          <div className="flex bg-white rounded-xl shadow-sm p-1">
+            {[['old', 'Current password'], ['otp', 'OTP (2FA)']].map(([m, label]) => (
+              <button
+                key={m}
+                onClick={() => { setMethod(m); setError('') }}
+                className={`flex-1 text-sm py-1.5 rounded-lg ${method === m ? 'bg-slate-900 text-white' : 'text-slate-600'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <form onSubmit={submit} className="bg-white rounded-xl shadow-sm p-4 space-y-3">
           {method === 'old' ? (

@@ -327,6 +327,10 @@ export const api = {
     const q = _q({ from_date: from, to_date: to, types })
     return handle(await fetch(`${BASE}/supervisor/analytics/by-department${q}`, { headers: authHeaders() }))
   },
+  async analyticsByAttribute(attribute, from, to, dept, types) {
+    const q = _q({ attribute, from_date: from, to_date: to, department_id: dept, types })
+    return handle(await fetch(`${BASE}/supervisor/analytics/by-attribute${q}`, { headers: authHeaders() }))
+  },
   async analyticsSourceSplit(from, to, dept, types) {
     const q = _q({ from_date: from, to_date: to, department_id: dept, types })
     return handle(await fetch(`${BASE}/supervisor/analytics/source-split${q}`, { headers: authHeaders() }))
@@ -382,6 +386,30 @@ export const api = {
       method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify(patch),
     }))
+  },
+
+  // ── EA super-admin: account administration (all departments) ──
+  async eaAccounts(role = 'all', q = '') {
+    const p = new URLSearchParams()
+    if (role && role !== 'all') p.set('role', role)
+    if (q) p.set('q', q)
+    const qs = p.toString() ? `?${p}` : ''
+    return handle(await fetch(`${BASE}/assistant/accounts${qs}`, { headers: authHeaders() }))
+  },
+  async eaAccount(externalId) {
+    return handle(await fetch(`${BASE}/assistant/accounts/${externalId}`, { headers: authHeaders() }))
+  },
+  async eaUpdateAccount(externalId, patch) {
+    return handle(await fetch(`${BASE}/assistant/accounts/${externalId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(patch),
+    }))
+  },
+  async eaSupervisors() {
+    return handle(await fetch(`${BASE}/assistant/supervisors`, { headers: authHeaders() }))
+  },
+  async eaRefOptions() {
+    return handle(await fetch(`${BASE}/assistant/ref-options`, { headers: authHeaders() }))
   },
 
   async myAttendance(limit = 100) {

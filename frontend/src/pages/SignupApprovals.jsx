@@ -97,7 +97,14 @@ function SignupCard({ s, onChange, setError }) {
           <div className="font-medium text-slate-800">{s.display_name}</div>
           <div className="text-xs text-slate-500 mt-0.5 space-y-0.5">
             <div>📱 {s.phone || '—'}{s.email ? ` · ✉️ ${s.email}` : ''}</div>
-            <div>{s.department_name || '—'}{s.home_station_name ? ` · ${s.home_station_name}` : ''}{s.blood_group ? ` · ${s.blood_group}` : ''}</div>
+            <div>{s.department_custom || s.department_name || '—'}{s.home_station_name ? ` · ${s.home_station_name}` : ''}{s.blood_group ? ` · ${s.blood_group}` : ''}</div>
+            {(s.designation_custom || s.designation_name || s.employment_type_custom || s.employment_type_name) && (
+              <div>
+                {(s.designation_custom || s.designation_name) || '—'}
+                {(s.employment_type_custom || s.employment_type_name) ? ` · ${s.employment_type_custom || s.employment_type_name}` : ''}
+              </div>
+            )}
+            {s.date_of_birth && <div>🎂 {s.date_of_birth}</div>}
           </div>
         </div>
         {overdue && <span className="shrink-0 text-[10px] font-semibold uppercase text-red-700 bg-red-100 rounded px-1.5 py-0.5">Overdue</span>}

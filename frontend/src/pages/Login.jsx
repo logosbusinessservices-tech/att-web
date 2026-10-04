@@ -3,6 +3,10 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../lib/auth.jsx'
 import { api } from '../lib/api.js'
 
+// OTP login is disabled for the initial rollout (no SMS provider). Flip to true
+// (and wire an SMS provider) to bring the phone-code sign-in back.
+const OTP_ENABLED = false
+
 function PasswordForm({ onDone }) {
   const { login } = useAuth()
   const [username, setUsername] = useState('')
@@ -133,7 +137,7 @@ function OtpForm({ onDone }) {
 
 export default function Login() {
   const navigate = useNavigate()
-  const [mode, setMode] = useState('otp') // otp | password
+  const [mode, setMode] = useState(OTP_ENABLED ? 'otp' : 'password') // otp | password
 
   function done(me) {
     navigate(me.role === 'supervisor' ? '/supervisor' : '/employee', { replace: true })
@@ -150,17 +154,19 @@ export default function Login() {
           </p>
         </div>
 
-        <div className="flex bg-slate-100 rounded-lg p-1">
-          {['otp', 'password'].map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className={`flex-1 text-sm py-1.5 rounded-md ${mode === m ? 'bg-white shadow-sm font-medium text-slate-800' : 'text-slate-500'}`}
-            >
-              {m === 'otp' ? 'OTP' : 'Password'}
-            </button>
-          ))}
-        </div>
+        {OTP_ENABLED && (
+          <div className="flex bg-slate-100 rounded-lg p-1">
+            {['otp', 'password'].map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className={`flex-1 text-sm py-1.5 rounded-md ${mode === m ? 'bg-white shadow-sm font-medium text-slate-800' : 'text-slate-500'}`}
+              >
+                {m === 'otp' ? 'OTP' : 'Password'}
+              </button>
+            ))}
+          </div>
+        )}
 
         {mode === 'otp' ? <OtpForm onDone={done} /> : <PasswordForm onDone={done} />}
 
