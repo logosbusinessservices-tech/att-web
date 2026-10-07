@@ -613,3 +613,33 @@ class InboxItem(BaseModel):
     created_at: UtcDatetime
 
 
+# ── Gate-monitor announcements ───────────────────────────────────────────────
+class DisplayMessageIn(BaseModel):
+    """Add or edit an announcement. Whitespace is normalized server-side."""
+    text: str
+
+
+class DisplayMessageReorder(BaseModel):
+    """The full list of active message ids, top of the board first."""
+    ids: list[int]
+
+
+class DisplayMessageOut(BaseModel):
+    id: int
+    text: str
+    position: int
+    created_at: UtcDatetime
+    updated_at: UtcDatetime | None = None
+
+
+class EdgeDisplayMessage(BaseModel):
+    id: int
+    text: str
+
+
+class EdgeDisplayMessages(BaseModel):
+    """What a gate monitor shows. `version` changes whenever the list does."""
+    version: str
+    messages: list[EdgeDisplayMessage]
+
+

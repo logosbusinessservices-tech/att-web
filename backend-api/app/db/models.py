@@ -325,3 +325,26 @@ class Notification(Base):
     for_date: Mapped[str | None] = mapped_column(String)  # ISO date the scan is for
     is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+# ── Gate-monitor announcements (EA-managed) ──────────────────────────────────
+class DisplayMessage(Base):
+    """One announcement on the gate monitors' message board.
+
+    A single shared list for every monitor, managed by Executive Assistants.
+    Removal is a soft delete (removed_at set) so the history stays auditable.
+    """
+
+    __tablename__ = "display_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    # Display order among active messages, 0 = top of the board.
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_by: Mapped[int] = mapped_column(ForeignKey("persons.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("persons.id"))
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    removed_by: Mapped[int | None] = mapped_column(ForeignKey("persons.id"))
+    # NULL = still on the board.
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)

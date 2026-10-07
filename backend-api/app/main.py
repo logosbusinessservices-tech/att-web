@@ -16,6 +16,7 @@ from app.routers import (
     assistant,
     attendance,
     auth,
+    display_messages,
     disputes,
     edge,
     employees,
@@ -49,6 +50,7 @@ app.include_router(field.router)
 app.include_router(employees.router)
 app.include_router(supervisor.router)
 app.include_router(assistant.router)
+app.include_router(display_messages.router)
 app.include_router(analytics.router)
 app.include_router(disputes.router)
 app.include_router(events.router)

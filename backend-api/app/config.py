@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     # Edge ingestion shared secret
     edge_api_key: str = "change-me-edge-key"
 
+    # ── Gate-monitor announcements (EA-managed message board) ────────────────
+    display_message_max_chars: int = 150
+    display_message_max_count: int = 8
+
     # Display timezone (storage is always UTC). Attendance days + late checks
     # are computed in THIS timezone.
     display_timezone: str = "Asia/Kolkata"

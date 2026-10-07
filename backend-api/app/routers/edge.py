@@ -18,7 +18,8 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.db.database import get_db
 from app.db.models import FaceEmbedding, Person
-from app.schemas import GalleryItem
+from app.schemas import EdgeDisplayMessage, EdgeDisplayMessages, GalleryItem
+from app.services import display_messages as display_messages_service
 
 router = APIRouter(prefix="/edge", tags=["edge"])
 
@@ -54,3 +55,17 @@ def gallery(
             embedding_b64=base64.b64encode(emb.embedding).decode("ascii"),
         ))
     return out
+
+
+@router.get(
+    "/display-messages",
+    response_model=EdgeDisplayMessages,
+    dependencies=[Depends(_check_edge_key)],
+)
+def display_messages(db: Session = Depends(get_db)):
+    """The announcements every gate monitor shows, top first."""
+    messages = display_messages_service.active_messages(db)
+    return EdgeDisplayMessages(
+        version=display_messages_service.board_version(messages),
+        messages=[EdgeDisplayMessage(id=m.id, text=m.text) for m in messages],
+    )
