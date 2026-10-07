@@ -28,7 +28,7 @@ export default defineConfig({
         ],
       },
       manifest: {
-        name: 'Railway Attendance',
+        name: 'RVNL Attendance',
         short_name: 'Attendance',
         description: 'Employee & supervisor attendance',
         theme_color: '#25201C',

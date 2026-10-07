@@ -10,7 +10,6 @@ export default function AppHeader({ title, back }) {
   return (
     <>
       <header className="bg-slate-900 text-white px-4 py-3 flex items-center gap-3">
-        <img src="/logo.svg" alt="RVNL" className="h-7 w-auto rounded bg-white/90 px-1.5 py-1 shrink-0" />
         {back && (
           <button onClick={() => navigate(back)} aria-label="Back" className="text-xl leading-none px-1">
             ‹
@@ -27,6 +26,10 @@ export default function AppHeader({ title, back }) {
         </div>
         <button onClick={logout} className="text-sm underline shrink-0">Sign out</button>
       </header>
+
+      <div className="px-4 pt-3">
+        <img src="/logo.svg" alt="RVNL" className="h-10 w-auto rounded bg-white px-2 py-1 shadow-sm" />
+      </div>
 
       {user?.must_change_password && !onChangePwPage && (
         <div className="bg-amber-100 text-amber-900 px-4 py-2 text-sm flex items-center justify-between gap-3">

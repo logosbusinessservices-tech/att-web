@@ -147,8 +147,8 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-brand-red-dark p-4">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl p-6 space-y-4">
         <div className="text-center">
-          <img src="/logo.svg" alt="RVNL" className="h-12 mx-auto mb-3" />
-          <h1 className="text-xl font-bold text-slate-800">Railway Attendance</h1>
+          <img src="/logo.svg" alt="RVNL" className="h-24 mx-auto mb-4" />
+          <h1 className="text-xl font-bold text-slate-800">Rail Vikas Nigam Limited Attendance</h1>
           <p className="text-sm text-slate-500">
             {mode === 'otp' ? 'Sign in with a code sent to your phone' : 'Sign in with your employee code'}
           </p>
