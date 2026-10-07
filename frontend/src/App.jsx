@@ -18,6 +18,7 @@ import FieldAttendance from './pages/FieldAttendance.jsx'
 import FieldApprovals from './pages/FieldApprovals.jsx'
 import EmployeeSettings from './pages/EmployeeSettings.jsx'
 import ManageAccounts from './pages/ManageAccounts.jsx'
+import DisplayMessages from './pages/DisplayMessages.jsx'
 import Inbox from './pages/Inbox.jsx'
 // Charts (recharts) are heavy; load the Analytics page only when opened.
 const Analytics = lazy(() => import('./pages/Analytics.jsx'))
@@ -165,6 +166,10 @@ export default function App() {
       <Route
         path="/assistant/holidays"
         element={<Protected role="assistant"><ComingSoon title="Holidays" back="/assistant" /></Protected>}
+      />
+      <Route
+        path="/assistant/display-messages"
+        element={<Protected role="assistant"><DisplayMessages back="/assistant" /></Protected>}
       />
     </Routes>
   )

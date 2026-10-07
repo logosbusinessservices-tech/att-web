@@ -412,6 +412,34 @@ export const api = {
     return handle(await fetch(`${BASE}/assistant/ref-options`, { headers: authHeaders() }))
   },
 
+  // ── EA: gate-monitor announcements ──
+  async displayMessages() {
+    return handle(await fetch(`${BASE}/assistant/display-messages`, { headers: authHeaders() }))
+  },
+  async addDisplayMessage(text) {
+    return handle(await fetch(`${BASE}/assistant/display-messages`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ text }),
+    }))
+  },
+  async editDisplayMessage(id, text) {
+    return handle(await fetch(`${BASE}/assistant/display-messages/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ text }),
+    }))
+  },
+  async removeDisplayMessage(id) {
+    return handle(await fetch(`${BASE}/assistant/display-messages/${id}`, {
+      method: 'DELETE', headers: authHeaders(),
+    }))
+  },
+  async reorderDisplayMessages(ids) {
+    return handle(await fetch(`${BASE}/assistant/display-messages/order`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ ids }),
+    }))
+  },
+
   async myAttendance(limit = 100) {
     return handle(
       await fetch(`${BASE}/attendance/me?limit=${limit}`, { headers: authHeaders() })

@@ -2,7 +2,8 @@ import AppHeader from '../components/AppHeader.jsx'
 import MenuButton from '../components/MenuButton.jsx'
 import { useAuth } from '../lib/auth.jsx'
 import {
-  ApprovalsIcon, BellIcon, CalendarIcon, DashboardIcon, HolidayIcon, LeaveIcon, ProfileIcon,
+  ApprovalsIcon, BellIcon, CalendarIcon, DashboardIcon, HolidayIcon, LeaveIcon, MegaphoneIcon,
+  ProfileIcon,
 } from '../components/icons.jsx'
 
 export default function AssistantHome() {
@@ -29,6 +30,7 @@ export default function AssistantHome() {
           <MenuButton icon={<ProfileIcon />} label="My Profile" to="/assistant/profile" />
           <MenuButton icon={<LeaveIcon />} label="Apply Work From Home/Leave" to="/assistant/leave" />
           <MenuButton icon={<HolidayIcon />} label="Holidays" to="/assistant/holidays" />
+          <MenuButton icon={<MegaphoneIcon />} label="Display Messages" to="/assistant/display-messages" />
         </div>
       </main>
     </div>

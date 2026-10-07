@@ -130,3 +130,11 @@ export const ChartIcon = () => (
   </svg>
 )
 
+export const MegaphoneIcon = () => (
+  <svg {...base}>
+    <path d="M3 10v4a1 1 0 0 0 1 1h3l8 5V4L7 9H4a1 1 0 0 0-1 1Z" />
+    <path d="M7 15l1.5 5h2.5l-1.2-4.2" />
+    <path d="M18.5 9a4 4 0 0 1 0 6" />
+  </svg>
+)
+
