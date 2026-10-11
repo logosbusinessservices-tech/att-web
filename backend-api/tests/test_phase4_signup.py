@@ -57,7 +57,7 @@ def test_signup_blocks_existing_phone(client, db_session):
     assert r.status_code == 409
 
 
-def test_pending_cannot_login_or_get_otp(client, db_session):
+def test_pending_cannot_login_or_get_otp(client, db_session, otp_on):
     ops = _dept_id(db_session, "Operations")
     _signup(client, "+91 90000 44444", ops)
     # No password -> password login impossible; OTP request sends no real code.

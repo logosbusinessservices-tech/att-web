@@ -25,9 +25,32 @@ from app.db.models import (
     Station,
 )
 from app.main import app
+from app.routers import edge as edge_router
 
 IST = ZoneInfo(settings.display_timezone)
 UTC = ZoneInfo("UTC")
+
+
+@pytest.fixture(autouse=True)
+def _isolated_storage(tmp_path, monkeypatch):
+    """Photos go to a temp folder \u2014 never to Azure or the repo's ./data."""
+    monkeypatch.setattr(settings, "azure_storage_connection_string", "")
+    monkeypatch.setattr(settings, "avatar_dir", str(tmp_path / "avatars"))
+    monkeypatch.setattr(settings, "field_selfie_dir", str(tmp_path / "selfies"))
+    monkeypatch.setattr(settings, "employee_photo_dir", str(tmp_path / "employee_photos"))
+
+
+@pytest.fixture(autouse=True)
+def _no_model_load(monkeypatch):
+    """The gallery endpoint fingerprints the face model; never load it in tests."""
+    monkeypatch.setattr(edge_router, "model_fingerprint", lambda: "test-model-sha256")
+
+
+@pytest.fixture()
+def otp_on(monkeypatch):
+    """OTP is off in production; tests of the dormant OTP flow switch it on."""
+    monkeypatch.setattr(settings, "otp_enabled", True)
+    monkeypatch.setattr(settings, "otp_debug_return_code", True)
 
 
 def _utc(d: date, hh: int, mm: int) -> datetime:

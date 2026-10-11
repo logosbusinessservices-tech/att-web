@@ -9,7 +9,7 @@ from app.config import settings
 from app.db.models import FaceEmbedding, Person
 
 
-def test_create_employee_in_supervisor_department(client, sup_headers, db_session):
+def test_create_employee_in_supervisor_department(client, sup_headers, db_session, otp_on):
     r = client.post("/supervisor/employees", headers=sup_headers, json={
         "external_id": "EMP100", "display_name": "New Hire",
         "phone": "+91 91234 56789", "blood_group": "O-",
@@ -80,20 +80,9 @@ def test_edge_gallery_returns_embeddings(client, db_session):
     _seed_embedding(db_session, "EMP001")
     r = client.get("/edge/gallery", headers={"X-Edge-Key": settings.edge_api_key})
     assert r.status_code == 200
-    items = r.json()
+    items = r.json()["items"]
     assert any(it["external_id"] == "EMP001" for it in items)
     item = next(it for it in items if it["external_id"] == "EMP001")
     raw = base64.b64decode(item["embedding_b64"])
     assert len(raw) == 512 * 4  # 512 float32
     assert item["num_photos"] == 3
-
-
-def test_edge_gallery_incremental_since(client, db_session):
-    _seed_embedding(db_session, "EMP001")
-    # A 'since' in the far future returns nothing new.
-    r = client.get(
-        "/edge/gallery?since=2999-01-01T00:00:00",
-        headers={"X-Edge-Key": settings.edge_api_key},
-    )
-    assert r.status_code == 200
-    assert r.json() == []

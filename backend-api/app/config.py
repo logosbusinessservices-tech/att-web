@@ -8,6 +8,10 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Public placeholder secrets; the app refuses to start on Postgres while either is in use.
+DEFAULT_JWT_SECRET = "change-me-to-a-long-random-string"
+DEFAULT_EDGE_API_KEY = "change-me-edge-key"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -22,7 +26,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./attendance.db"
 
     # Auth
-    jwt_secret: str = "change-me-to-a-long-random-string"
+    jwt_secret: str = DEFAULT_JWT_SECRET
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440
 
@@ -44,7 +48,7 @@ class Settings(BaseSettings):
     # Days after activation before employee/supervisor are nagged that the
     # employee's attendance photos still haven't been enrolled.
     enroll_reminder_days: int = 3
-    # Where profile avatars are stored (filesystem in dev; object storage in prod).
+    # Local folder for profile avatars; used only when Azure storage isn't configured.
     avatar_dir: str = "./data/avatars"
     # Max avatar upload size (bytes).
     avatar_max_bytes: int = 5 * 1024 * 1024
@@ -59,12 +63,25 @@ class Settings(BaseSettings):
     field_duplicate_window_s: int = 120
     # Keep the audit selfie this many days, then purge (metadata is kept).
     field_selfie_retention_days: int = 30
-    # In non-prod, the check-in response includes the match similarity for debugging.
-    field_debug_return_similarity: bool = True
-    # Where audit selfies are stored (filesystem in dev; object storage in prod).
+    # Debug only: include the match similarity in the check-in response.
+    field_debug_return_similarity: bool = False
+    # Local folder for audit selfies; used only when Azure storage isn't configured.
     field_selfie_dir: str = "./data/field_selfies"
 
-    # ── OTP login ────────────────────────────────────────────────────────────
+    # ── Photo storage ─────────────────────────────────────────────────────────────────────────
+    # When set, photos go to Azure Blob Storage (survives restarts/redeploys);
+    # when empty, they go to the local folders (dev + tests).
+    azure_storage_connection_string: str = ""
+    storage_container_avatars: str = "avatars"
+    storage_container_field_selfies: str = "field-selfies"
+    storage_container_employee_photos: str = "employee-photos"
+    # Local folder for onboarding photos; used only when Azure storage isn't configured.
+    employee_photo_dir: str = "./data/employee_photos"
+
+    # ── OTP login ────────────────────────────────────────────────────────────────────────────
+    # Off until SMS delivery is set up: every OTP endpoint answers 404 and
+    # password changes need the current password.
+    otp_enabled: bool = False
     otp_length: int = 6
     otp_ttl_minutes: int = 5
     otp_max_attempts: int = 5
@@ -75,8 +92,8 @@ class Settings(BaseSettings):
     # Email OTP channel (2FA for password change): "console" (dev) or "smtp".
     email_provider: str = "console"
     email_from: str = "no-reply@att-web.local"
-    # In non-prod, the request response includes the code so testing is easy.
-    otp_debug_return_code: bool = True
+    # Debug only: include the OTP code in the API response (never in production).
+    otp_debug_return_code: bool = False
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_from_number: str = ""
@@ -85,7 +102,7 @@ class Settings(BaseSettings):
     password_reminder_days: int = 3
 
     # Edge ingestion shared secret
-    edge_api_key: str = "change-me-edge-key"
+    edge_api_key: str = DEFAULT_EDGE_API_KEY
 
     # ── Gate-monitor announcements (EA-managed message board) ────────────────
     display_message_max_chars: int = 150
@@ -135,6 +152,24 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def assert_production_secrets(s: Settings) -> None:
+    """Refuse to run on Postgres (production) while a public placeholder secret is set."""
+    if s.is_sqlite:
+        return
+    weak = [
+        name
+        for name, value, default in (
+            ("JWT_SECRET", s.jwt_secret, DEFAULT_JWT_SECRET),
+            ("EDGE_API_KEY", s.edge_api_key, DEFAULT_EDGE_API_KEY),
+        )
+        if not value or value == default
+    ]
+    if weak:
+        raise RuntimeError(
+            "Refusing to start: set a long random value for " + ", ".join(weak)
+        )
 
 
 settings = get_settings()

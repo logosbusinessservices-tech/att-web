@@ -13,6 +13,7 @@ The model is loaded once (lazily) and kept warm in memory — the reason the bac
 runs on a persistent container (Render), not serverless.
 """
 
+import hashlib
 import warnings
 
 import cv2
@@ -28,6 +29,7 @@ from app.config import settings
 EMBEDDING_DIM = 512
 
 _app: FaceAnalysis | None = None
+_fingerprint: str | None = None
 
 
 def get_face_app() -> FaceAnalysis:
@@ -45,6 +47,26 @@ def get_face_app() -> FaceAnalysis:
         )
         _app = app
     return _app
+
+
+def model_fingerprint() -> str | None:
+    """SHA-256 of the recognition model file actually loaded.
+
+    Edges compare this with their own, so a gate never matches faces using
+    different weights than the ones that built the stored templates.
+    """
+    global _fingerprint
+    if _fingerprint is None:
+        model = get_face_app().models.get("recognition")
+        path = getattr(model, "model_file", None)
+        if not path:
+            return None
+        digest = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                digest.update(chunk)
+        _fingerprint = digest.hexdigest()
+    return _fingerprint
 
 
 def _quality(det_score: float, kps, crop_bgr) -> float:

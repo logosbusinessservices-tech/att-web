@@ -9,8 +9,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import settings
+from app.config import assert_production_secrets, settings
+from app.db.database import engine
 from app.db.init_db import init_db
+from app.db.migrate import run_migrations
 from app.routers import (
     analytics,
     assistant,
@@ -29,8 +31,9 @@ from app.routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Dev convenience: ensure tables exist on startup (SQLite). In prod, use migrations.
+    assert_production_secrets(settings)
     init_db()
+    run_migrations(engine)
     yield
 
 

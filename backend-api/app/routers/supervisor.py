@@ -8,13 +8,15 @@ Provides attendance the three ways requested:
 Role-guarded. The rich dashboard UI is Phase 2; these endpoints power it.
 """
 
+import logging
 from datetime import date, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import storage
 from app.auth.deps import require_supervisor
 from app.auth.security import hash_password
 from app.config import settings
@@ -61,6 +63,8 @@ from app.services import corrections
 from app.services import enrollment as enroll_service
 from app.services import notifications as notifications_service
 from app.services.report import build_overview_workbook
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/supervisor", tags=["supervisor"])
 
@@ -619,16 +623,14 @@ def _seed_avatar_from(person: Person, images: list[bytes]) -> None:
     unless the person already has one."""
     if person.avatar_path or not images:
         return
-    import os
     import uuid
-    os.makedirs(settings.avatar_dir, exist_ok=True)
-    path = os.path.join(settings.avatar_dir, f"{person.id}_{uuid.uuid4().hex[:8]}.jpg")
     try:
-        with open(path, "wb") as fh:
-            fh.write(images[0])
-        person.avatar_path = path
-    except OSError:
-        pass
+        person.avatar_path = storage.save(
+            storage.AVATARS, f"{person.id}_{uuid.uuid4().hex[:8]}.jpg", images[0]
+        )
+    except Exception:
+        # Cosmetic only — never fail an enrollment because the avatar didn't save.
+        log.exception("Could not seed avatar for person %s", person.id)
 
 
 def _signup_out(db: Session, p: Person) -> SignupOut:
@@ -825,12 +827,10 @@ def field_selfie(
 ):
     """Serve the audit selfie for a field scan (dept-scoped, may be purged)."""
     ev, _ = _load_field_event(db, current, event_id)
-    if not ev.selfie_path:
+    data = storage.load(ev.selfie_path)
+    if data is None:
         raise HTTPException(status_code=404, detail="Selfie no longer available")
-    import os
-    if not os.path.exists(ev.selfie_path):
-        raise HTTPException(status_code=404, detail="Selfie no longer available")
-    return FileResponse(ev.selfie_path, media_type="image/jpeg")
+    return Response(content=data, media_type="image/jpeg")
 
 
 # ── Delegation to the Executive Assistant ────────────────────────────────────

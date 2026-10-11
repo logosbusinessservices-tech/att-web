@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.deps import get_current_user, user_out
 from app.auth.security import create_access_token, hash_password, verify_password
+from app.config import settings
 from app.db.database import get_db
 from app.db.models import Department, Designation, EmploymentType, Person, Station
 from app.schemas import (
@@ -29,6 +30,12 @@ from app.services import otp as otp_service
 from app.services import signup as signup_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _require_otp_enabled():
+    """OTP endpoints look nonexistent until SMS delivery is switched on."""
+    if not settings.otp_enabled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
 
 
 @router.post("/login", response_model=Token)
@@ -86,7 +93,7 @@ def signup_options(db: Session = Depends(get_db)):
     )
 
 
-@router.post("/signup/otp", response_model=OtpRequestAck)
+@router.post("/signup/otp", response_model=OtpRequestAck, dependencies=[Depends(_require_otp_enabled)])
 def signup_otp(body: SignupOtpRequest, db: Session = Depends(get_db)):
     """Send a verification code to a would-be employee's mobile."""
     try:
@@ -124,7 +131,7 @@ def signup(body: SignupCreate, db: Session = Depends(get_db)):
 
 
 # ── OTP login (no password needed) ───────────────────────────────────────────
-@router.post("/otp/request", response_model=OtpRequestAck)
+@router.post("/otp/request", response_model=OtpRequestAck, dependencies=[Depends(_require_otp_enabled)])
 def otp_request(body: OtpRequest, db: Session = Depends(get_db)):
     """Send a one-time code to the phone. Always 200 (doesn't reveal if the
     number exists), except when rate-limited."""
@@ -135,7 +142,7 @@ def otp_request(body: OtpRequest, db: Session = Depends(get_db)):
     return OtpRequestAck(**result)
 
 
-@router.post("/otp/verify", response_model=Token)
+@router.post("/otp/verify", response_model=Token, dependencies=[Depends(_require_otp_enabled)])
 def otp_verify(body: OtpVerify, db: Session = Depends(get_db)):
     """Verify the code and issue a JWT, just like a password login."""
     try:
@@ -147,7 +154,7 @@ def otp_verify(body: OtpVerify, db: Session = Depends(get_db)):
 
 
 # ── Change password (old password OR mobile OTP 2FA) ─────────────────────────
-@router.post("/password/otp", response_model=OtpRequestAck)
+@router.post("/password/otp", response_model=OtpRequestAck, dependencies=[Depends(_require_otp_enabled)])
 def password_change_otp(
     current: Person = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -176,7 +183,7 @@ def password_change(
     if body.old_password:
         if not current.password_hash or not verify_password(body.old_password, current.password_hash):
             raise HTTPException(status_code=400, detail="Current password is incorrect")
-    elif body.otp_code:
+    elif body.otp_code and settings.otp_enabled:
         try:
             otp_service.verify_password_otp(db, current, body.otp_code)
         except otp_service.OtpError as exc:
@@ -184,7 +191,8 @@ def password_change(
     else:
         raise HTTPException(
             status_code=400,
-            detail="Provide your current password or a verification code",
+            detail=("Provide your current password or a verification code"
+                    if settings.otp_enabled else "Provide your current password"),
         )
 
     current.password_hash = hash_password(body.new_password)

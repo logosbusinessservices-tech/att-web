@@ -53,7 +53,7 @@ def test_change_password_requires_proof(client, emp_headers):
 
 
 # ── Change password via mobile OTP (2FA) ─────────────────────────────────────
-def test_change_password_with_mobile_otp(client, emp_headers):
+def test_change_password_with_mobile_otp(client, emp_headers, otp_on):
     ack = client.post("/auth/password/otp", headers=emp_headers, json={})
     assert ack.status_code == 200
     code = ack.json()["debug_code"]
@@ -63,13 +63,13 @@ def test_change_password_with_mobile_otp(client, emp_headers):
     assert client.post("/auth/login", data={"username": "EMP001", "password": "viaotp123"}).status_code == 200
 
 
-def test_change_password_otp_no_phone_on_file(client, emp2_headers):
+def test_change_password_otp_no_phone_on_file(client, emp2_headers, otp_on):
     # EMP002 has no phone seeded, so mobile 2FA can't be used.
     r = client.post("/auth/password/otp", headers=emp2_headers, json={})
     assert r.status_code == 400
 
 
-def test_change_password_wrong_otp(client, emp_headers):
+def test_change_password_wrong_otp(client, emp_headers, otp_on):
     client.post("/auth/password/otp", headers=emp_headers, json={})
     r = client.post("/auth/password/change", headers=emp_headers,
                     json={"otp_code": "000000", "new_password": "nope12345"})

@@ -6,10 +6,12 @@ Secured with a shared EDGE_API_KEY header, so the DB is never exposed directly.
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.auth.edge import require_edge_key
 from app.config import settings
 from app.db.database import get_db
 from app.db.models import AttendanceEvent, Person
@@ -18,16 +20,27 @@ from app.schemas import EdgeEventIn, EventAck
 router = APIRouter(prefix="/events", tags=["events"])
 
 
-def _check_edge_key(x_edge_key: str | None = Header(default=None)):
-    if x_edge_key != settings.edge_api_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid edge API key"
-        )
+def _existing_event_id(db: Session, event_uuid: str) -> int | None:
+    return db.execute(
+        select(AttendanceEvent.id).where(AttendanceEvent.event_uuid == event_uuid)
+    ).scalar_one_or_none()
 
 
-@router.post("", response_model=EventAck, dependencies=[Depends(_check_edge_key)])
+@router.post("", response_model=EventAck, dependencies=[Depends(require_edge_key)])
 def ingest_event(payload: EdgeEventIn, db: Session = Depends(get_db)):
-    """Store one camera attendance event (source='camera')."""
+    """Store one camera attendance event (source='camera').
+
+    Safe to retry: an event whose `event_uuid` was already stored is answered
+    with status 'duplicate' and the original id, and nothing new is written.
+    """
+    if payload.event_uuid:
+        existing = _existing_event_id(db, payload.event_uuid)
+        if existing is not None:
+            return EventAck(id=existing, status="duplicate")
+
+    if payload.direction is not None and payload.direction.lower() not in ("entry", "exit"):
+        raise HTTPException(status_code=422, detail="direction must be 'entry' or 'exit'")
+
     person_id = None
     if not payload.is_visitor and payload.external_id:
         person = db.execute(
@@ -52,8 +65,18 @@ def ingest_event(payload: EdgeEventIn, db: Session = Depends(get_db)):
         source="camera",
         direction=direction,
         event_time=payload.event_time or datetime.now(timezone.utc),
+        event_uuid=payload.event_uuid,
+        crop_path=payload.crop_ref,
     )
     db.add(event)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # Two copies of the same event raced past the check above.
+        db.rollback()
+        existing = _existing_event_id(db, payload.event_uuid) if payload.event_uuid else None
+        if existing is None:
+            raise
+        return EventAck(id=existing, status="duplicate")
     db.refresh(event)
     return EventAck(id=event.id)

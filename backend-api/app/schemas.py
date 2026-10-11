@@ -3,7 +3,7 @@
 from datetime import date, datetime, timezone
 from typing import Annotated
 
-from pydantic import AfterValidator, BaseModel
+from pydantic import AfterValidator, BaseModel, Field
 
 
 def _ensure_utc(dt: datetime) -> datetime:
@@ -232,11 +232,15 @@ class EdgeEventIn(BaseModel):
     direction: str | None = None     # entry | exit; falls back to CAMERA_DIRECTIONS
     track_id: int | None = None
     event_time: datetime | None = None  # UTC; server fills if omitted
+    # Edge-generated id; a retry carrying the same id is acknowledged, not stored twice.
+    event_uuid: str | None = Field(default=None, max_length=64)
+    # Name of the audit face crop in the camera-audit container (internal only).
+    crop_ref: str | None = Field(default=None, max_length=512)
 
 
 class EventAck(BaseModel):
     id: int
-    status: str = "stored"
+    status: str = "stored"           # stored | duplicate
 
 
 # ── Disputes & overrides (Phase 2) ───────────────────────────────────────────
@@ -556,12 +560,23 @@ class SupervisorOut(BaseModel):
 
 
 class GalleryItem(BaseModel):
-    """One enrolled face for the edge to sync into its local recognition DB."""
+    """One enrolled face for the edge's local recognition gallery."""
     external_id: str
     display_name: str
     num_photos: int
-    updated_at: datetime
+    updated_at: UtcDatetime
     embedding_b64: str              # base64 of the raw float32 512-d blob
+
+
+class GallerySnapshot(BaseModel):
+    """Everyone the gates should recognize right now (the edge replaces its whole list)."""
+    version: str                    # changes whenever the list or any template changes
+    unchanged: bool = False         # True => caller's version is current; items omitted
+    model_name: str
+    model_sha256: str | None = None  # fingerprint of the recognition model file
+    embedding_dim: int
+    count: int
+    items: list[GalleryItem] = []
 
 
 # ── Delegation: supervisor → Executive Assistant ─────────────────────────────

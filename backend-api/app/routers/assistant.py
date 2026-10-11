@@ -10,14 +10,13 @@ Onboarding is global (any EA can clear any pending sign-up, with an
 already-handled guard). Delegated tasks are private to the assigned EA.
 """
 
-import os
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import storage
 from app.auth.deps import require_assistant
 from app.db.database import get_db
 from app.db.models import (
@@ -309,9 +308,10 @@ def field_selfie(
     if owns is None:
         raise HTTPException(status_code=404, detail="Field scan not found")
     ev = db.get(AttendanceEvent, event_id)
-    if ev is None or not ev.selfie_path or not os.path.exists(ev.selfie_path):
+    data = storage.load(ev.selfie_path) if ev is not None else None
+    if data is None:
         raise HTTPException(status_code=404, detail="Selfie no longer available")
-    return FileResponse(ev.selfie_path, media_type="image/jpeg")
+    return Response(content=data, media_type="image/jpeg")
 
 
 # ── Attendance-edit tasks: reuse the correction primitives, scoped to task ────

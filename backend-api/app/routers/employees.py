@@ -1,13 +1,12 @@
 """Employee self-service routes (profile + avatar)."""
 
-import os
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import storage
 from app.auth.deps import get_current_user, user_out
 from app.config import settings
 from app.db.database import get_db
@@ -70,20 +69,14 @@ async def upload_avatar(
     if decode_image_bytes(data) is None:
         raise HTTPException(status_code=422, detail="That file isn't a readable image.")
 
-    os.makedirs(settings.avatar_dir, exist_ok=True)
-    path = os.path.join(settings.avatar_dir, f"{current.id}_{uuid.uuid4().hex[:8]}.jpg")
-    with open(path, "wb") as fh:
-        fh.write(data)
+    ref = storage.save(storage.AVATARS, f"{current.id}_{uuid.uuid4().hex[:8]}.jpg", data)
 
     old = current.avatar_path
-    current.avatar_path = path
+    current.avatar_path = ref
     db.commit()
     db.refresh(current)
-    if old and old != path and os.path.exists(old):
-        try:
-            os.remove(old)
-        except OSError:
-            pass
+    if old and old != ref:
+        storage.delete(old)
     return user_out(current, db)
 
 
@@ -101,6 +94,7 @@ def get_avatar(
         raise HTTPException(status_code=404, detail="Not found")
     if current.role != "supervisor" and current.id != person.id:
         raise HTTPException(status_code=403, detail="Not allowed")
-    if not person.avatar_path or not os.path.exists(person.avatar_path):
+    data = storage.load(person.avatar_path)
+    if data is None:
         raise HTTPException(status_code=404, detail="No photo set")
-    return FileResponse(person.avatar_path, media_type="image/jpeg")
+    return Response(content=data, media_type="image/jpeg")

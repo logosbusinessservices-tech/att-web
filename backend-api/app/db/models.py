@@ -20,6 +20,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
@@ -202,6 +203,12 @@ class AttendanceEvent(Base):
     # A voided manual event is a tombstone: it supersedes the crossing it replaces
     # and is itself excluded (an audit-friendly delete).
     voided: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Edge-generated id for camera events, so a retried upload is stored once.
+    event_uuid: Mapped[str | None] = mapped_column(String)
+
+    __table_args__ = (
+        Index("uq_attendance_events_event_uuid", "event_uuid", unique=True),
+    )
 
 
 # ── Attendance overrides (new, append-only audit trail) ──────────────────────

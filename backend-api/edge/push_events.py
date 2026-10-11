@@ -15,6 +15,7 @@ import json
 import os
 import urllib.error
 import urllib.request
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -83,6 +84,7 @@ def push_event(
     Returns True if delivered now, False if it was queued for retry.
     """
     event = {
+        "event_uuid": uuid.uuid4().hex,  # same id on every retry -> stored once
         "external_id": external_id,
         "is_visitor": is_visitor,
         "similarity": similarity,

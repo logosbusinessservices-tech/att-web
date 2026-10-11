@@ -9,14 +9,21 @@ The stored embedding is byte-for-byte comparable with the camera pipeline's, so
 the same person recognized at a gate and enrolled here will match.
 """
 
+import logging
+import uuid
+from datetime import datetime, timezone
+
 import numpy as np
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import storage
 from app.config import settings
 from app.db.models import FaceEmbedding, Person
 from app.face.model import decode_image_bytes, embed_largest_face
 from app.face.verify import embedding_to_blob
+
+log = logging.getLogger(__name__)
 
 
 class EnrollmentError(Exception):
@@ -78,4 +85,20 @@ def enroll_person(db: Session, person: Person, images: list[bytes]) -> dict:
         existing.embedding = blob
         existing.num_photos = used
     db.flush()
+    _archive_photos(person, images)
     return {"photos_used": used, "photos_submitted": len(images), "notes": notes}
+
+
+def _archive_photos(person: Person, images: list[bytes]) -> None:
+    """Keep the original onboarding photos so templates can be rebuilt with a new model.
+
+    Keyed by the internal person id, which (unlike the employee code) never
+    changes when a sign-up is approved.
+    """
+    batch = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S}_{uuid.uuid4().hex[:6]}"
+    for i, data in enumerate(images, start=1):
+        try:
+            storage.save(storage.EMPLOYEE_PHOTOS, f"{person.id}/{batch}_{i:02d}.jpg", data)
+        except Exception:
+            # The template is already built; a storage hiccup must not fail onboarding.
+            log.exception("Could not archive onboarding photo %d for person %s", i, person.id)

@@ -14,11 +14,11 @@ directly comparable with the camera pipeline's embeddings.
 
 import uuid
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import storage
 from app.config import settings
 from app.db.models import AttendanceEvent, FaceEmbedding, Person, Station
 from app.face.model import decode_image_bytes, embed_largest_face
@@ -42,13 +42,9 @@ def _enrolled_blob(db: Session, person_id: int) -> bytes | None:
 
 
 def _save_selfie(person_external_id: str, image: bytes) -> str:
-    """Persist the audit selfie and return its stored path (purged after N days)."""
-    base = Path(settings.field_selfie_dir)
-    base.mkdir(parents=True, exist_ok=True)
+    """Persist the audit selfie and return its storage reference (purged after N days)."""
     fname = f"{person_external_id}_{datetime.now(timezone.utc):%Y%m%dT%H%M%S}_{uuid.uuid4().hex[:8]}.jpg"
-    path = base / fname
-    path.write_bytes(image)
-    return str(path)
+    return storage.save(storage.FIELD_SELFIES, fname, image)
 
 
 def open_entry_today(db: Session, person: Person) -> bool:
@@ -203,10 +199,7 @@ def purge_old_selfies(db: Session) -> int:
         if when.tzinfo is None:
             when = when.replace(tzinfo=timezone.utc)
         if when < cutoff:
-            try:
-                Path(e.selfie_path).unlink(missing_ok=True)
-            except OSError:
-                pass
+            storage.delete(e.selfie_path)
             e.selfie_path = None
             removed += 1
     db.commit()

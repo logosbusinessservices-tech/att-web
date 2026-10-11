@@ -1,6 +1,14 @@
-"""OTP login: request/verify, expiry, attempt cap, cooldown, phone normalization."""
+"""OTP login: request/verify, expiry, attempt cap, cooldown, phone normalization.
+
+OTP is switched off in production; these tests exercise the dormant flow with
+it switched on so it still works when SMS delivery is added later.
+"""
+
+import pytest
 
 from app.services import otp as otp_service
+
+pytestmark = pytest.mark.usefixtures("otp_on")
 
 
 def test_phone_normalization():
