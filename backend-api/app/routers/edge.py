@@ -17,11 +17,16 @@ from sqlalchemy.orm import Session
 
 from app.auth.edge import require_edge_key
 from app.config import settings
+from app import storage
 from app.db.database import get_db
 from app.db.models import FaceEmbedding, Person
 from app.face.model import EMBEDDING_DIM, model_fingerprint
-from app.schemas import EdgeDisplayMessage, EdgeDisplayMessages, GalleryItem, GallerySnapshot
+from app.schemas import (
+    EdgeDisplayMessage, EdgeDisplayMessages, EdgeSignageMedia, EdgeSignageMediaList,
+    GalleryItem, GallerySnapshot,
+)
 from app.services import display_messages as display_messages_service
+from app.services import signage_media as signage_media_service
 
 log = logging.getLogger(__name__)
 
@@ -92,3 +97,45 @@ def display_messages(db: Session = Depends(get_db)):
         version=display_messages_service.board_version(messages),
         messages=[EdgeDisplayMessage(id=m.id, text=m.text) for m in messages],
     )
+
+
+@router.get(
+    "/signage-media",
+    response_model=EdgeSignageMediaList,
+    dependencies=[Depends(require_edge_key)],
+)
+def signage_media(db: Session = Depends(get_db)):
+    """Media slides (images/videos) for the gate monitors, in display order."""
+    items = signage_media_service.active_media(db)
+    return EdgeSignageMediaList(
+        version=signage_media_service.media_version(items),
+        items=[
+            EdgeSignageMedia(
+                id=m.id,
+                media_type=m.media_type,
+                content_type=m.content_type,
+                file_size=m.file_size,
+            )
+            for m in items
+        ],
+    )
+
+
+@router.get(
+    "/signage-media/{media_id}/file",
+    dependencies=[Depends(require_edge_key)],
+)
+def signage_media_file(media_id: int, db: Session = Depends(get_db)):
+    """Download one media file (called by the NUC sync script)."""
+    from app.db.models import SignageMedia as SM
+    from fastapi.responses import Response
+
+    media = db.get(SM, media_id)
+    if media is None or media.removed_at is not None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Media not found.")
+    data = storage.load(media.storage_ref)
+    if data is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="File not found in storage.")
+    return Response(content=data, media_type=media.content_type)

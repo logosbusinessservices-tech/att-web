@@ -355,3 +355,32 @@ class DisplayMessage(Base):
     removed_by: Mapped[int | None] = mapped_column(ForeignKey("persons.id"))
     # NULL = still on the board.
     removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+
+
+# ── Signage media (images / videos managed by the super-admin EA) ────────────
+class SignageMedia(Base):
+    """An image or video slide shown on the gate monitors.
+
+    Managed exclusively by the EA001 super-admin account. Removal is a soft
+    delete so the audit trail is kept.
+    """
+
+    __tablename__ = "signage_media"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # "image" or "video"
+    media_type: Mapped[str] = mapped_column(String, nullable=False)
+    # Original filename the user uploaded (for display in the UI).
+    original_filename: Mapped[str] = mapped_column(String, nullable=False)
+    # Reference to the stored blob (see storage.py).
+    storage_ref: Mapped[str] = mapped_column(String, nullable=False)
+    # MIME type (image/jpeg, image/png, video/mp4).
+    content_type: Mapped[str] = mapped_column(String, nullable=False)
+    # File size in bytes.
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Display order among active slides, 0 = first.
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_by: Mapped[int] = mapped_column(ForeignKey("persons.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    removed_by: Mapped[int | None] = mapped_column(ForeignKey("persons.id"))
+    removed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)

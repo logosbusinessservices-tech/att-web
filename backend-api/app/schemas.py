@@ -658,3 +658,32 @@ class EdgeDisplayMessages(BaseModel):
     messages: list[EdgeDisplayMessage]
 
 
+# ── Signage media (image/video slides) ───────────────────────────────────────
+class SignageMediaOut(BaseModel):
+    id: int
+    media_type: str
+    original_filename: str
+    content_type: str
+    file_size: int
+    position: int
+    created_at: UtcDatetime
+
+
+class SignageMediaReorder(BaseModel):
+    """The full list of active media ids, first slide first."""
+    ids: list[int]
+
+
+class EdgeSignageMedia(BaseModel):
+    id: int
+    media_type: str  # "image" or "video"
+    content_type: str
+    file_size: int
+
+
+class EdgeSignageMediaList(BaseModel):
+    """Media slides for the gate monitors. `version` changes when the list does."""
+    version: str
+    items: list[EdgeSignageMedia]
+
+

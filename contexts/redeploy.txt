@@ -1,0 +1,212 @@
+This is a great thing to nail down now so redeploys are routine. Let me confirm one important detail about how your DB schema behaves on redeploy, then I'll give you the full playbook.    
+
+Searched for files matching `**/backend-api/scripts/migrate_*.py`, 3 matches
+
+Read 
+
+Confirmed the one gotcha I wanted to verify: your `init_db.py:15-16` uses `create_all`, which **only creates missing tables — it never alters existing ones**. So if a future change adds a *column* to an existing model, redeploying the container alone won't update the Neon schema (more on that in section 5).
+
+Here's your complete, repeatable redeploy playbook.
+
+---
+
+# Redeploy Playbook (UAT)
+
+## 0. Mental model — what each kind of change needs
+
+| What you changed | What you must do | Rebuild image? | Restart app? |
+|---|---|---|---|
+| **Backend Python code** (routers, services, models logic) | Rebuild image → update app | ✅ Yes | ✅ Yes |
+| **Backend dependency** (`requirements.txt`) | Rebuild image → update app | ✅ Yes | ✅ Yes |
+| **Environment variable / secret** (DB URL, CORS, JWT, etc.) | `appsettings set` → restart | ❌ No | ✅ Yes |
+| **Frontend code** (`frontend/…`) | Push to Git → Vercel redeploys | ❌ No (Vercel builds) | n/a |
+| **Frontend env var** (`VITE_API_BASE`) | Change in Vercel → redeploy | n/a | n/a |
+| **New table** (new model class) | Redeploy container (auto-creates) | ✅ Yes | ✅ Yes |
+| **New/changed column** on an existing table | Run a migration/ALTER on Neon **+** redeploy | ✅ Yes | ✅ Yes |
+| **Seed/reference data** (e.g. stations) | Run the seed script against Neon | ❌ No | ❌ No |
+
+---
+
+## 1. Pre-flight (always do this locally first)
+
+1. Make your code changes in your local repo (the folder you build from — `C:\Users\Julia\Desktop\att-web`).
+2. **Run the tests** before redeploying — your repo ships a full suite:
+   ```cmd
+   cd /d C:\Users\Julia\Desktop\att-web\backend-api
+   .venv\Scripts\python.exe -m pytest -q
+   ```
+   Fix anything red before you deploy. (Tests run on SQLite, so they don't touch Neon.)
+3. Commit so you can roll back and so Vercel sees frontend changes:
+   ```cmd
+   git add -A
+   git commit -m "Describe the change"
+   git push
+   ```
+4. Sanity check: the Postgres driver must still be enabled (it's easy to lose if you re-clone):
+   ```cmd
+   findstr psycopg requirements.txt
+   ```
+   Must print `psycopg[binary]==3.2.3` **without** a leading `#`.
+
+---
+
+## 2. Set your variables (every new terminal)
+
+These reset when you close the window, so paste this block first each session:
+```cmd
+set RG=attweb-uat-rg
+set ACR=attwebuatacr18776
+set APP=attweb-uat-api-18776
+set PLAN=attweb-uat-plan
+```
+
+---
+
+## 3. Redeploy the **backend** (the main recurring flow)
+
+> **Recommended: use a fresh image tag each deploy.** Reusing `:latest` can leave App Service serving a *cached* old image, which looks like "my change didn't deploy". A new tag every time removes all doubt **and** gives you instant rollback.
+
+Pick a new tag each deploy (a date + counter is easy to reason about):
+```cmd
+set TAG=2026-10-02-1
+```
+
+Build the image in the cloud from your local code:
+```cmd
+cd /d C:\Users\Julia\Desktop\att-web\backend-api
+az acr build --registry %ACR% --image attweb-backend:%TAG% .
+```
+✅ Ends with `Run ID: ... was successful`.
+
+Point the web app at the new tag (registry credentials are already stored, so you only change the image name — this triggers a fresh pull):
+```cmd
+az webapp config container set -n %APP% -g %RG% --container-image-name %ACR%.azurecr.io/attweb-backend:%TAG%
+```
+
+Restart to be certain it loads the new image:
+```cmd
+az webapp restart -g %RG% -n %APP%
+```
+
+> **Simpler alternative (if you'd rather keep `:latest`):**
+> ```cmd
+> az acr build --registry %ACR% --image attweb-backend:latest .
+> az webapp restart -g %RG% -n %APP%
+> ```
+> This usually works, but if a change ever seems to "not take", switch to the tagged flow above to force the pull.
+
+---
+
+## 4. Change an **environment variable / secret** (no rebuild)
+
+For things like rotating `JWT_SECRET`, fixing `CORS_ORIGINS`, or changing `DATABASE_URL` — you do **not** rebuild the image:
+```cmd
+az webapp config appsettings set -g %RG% -n %APP% --settings CORS_ORIGINS="https://your-app.vercel.app"
+az webapp restart -g %RG% -n %APP%
+```
+Set multiple at once by space-separating `KEY="value"` pairs. Verify:
+```cmd
+az webapp config appsettings list -g %RG% -n %APP% -o table
+```
+
+---
+
+## 5. Database changes (the part that isn't automatic)
+
+Because `create_all` never alters existing tables:
+
+- **Added a brand-new table (new model)?** Just redeploy the container (section 3). On startup the app creates the missing table automatically. No extra step.
+- **Added or changed a column on an existing table?** The container redeploy will **not** add that column, and the app will error when it queries it. You must apply the change to Neon yourself, using either:
+  - a one-off SQL statement in **Neon's SQL editor**, e.g.:
+    ```sql
+    ALTER TABLE employees ADD COLUMN new_field TEXT;
+    ```
+  - or a migration script if you add one (you already have the pattern in `migrate_phase3.py` etc.). Run it against Neon the same way you ran the station seeder:
+    ```cmd
+    cd /d C:\Users\Julia\Desktop\att-web\backend-api
+    set "DATABASE_URL=<your Neon URL>"
+    .venv\Scripts\python.exe -m scripts.migrate_phase3
+    ```
+    (Get the Neon URL with `az webapp config appsettings list -g %RG% -n %APP% --query "[?name=='DATABASE_URL'].value" -o tsv`.)
+- **Need to seed/refresh reference data** (stations, etc.)? Run the seed script against Neon exactly like before — no redeploy needed:
+  ```cmd
+  set "DATABASE_URL=<your Neon URL>"
+  .venv\Scripts\python.exe -m scripts.seed_stations
+  ```
+
+> Rule of thumb: **code/schema shape → rebuild container; data content → run a script against Neon; a new column → do the ALTER *before or alongside* the container redeploy** so the new code and new schema land together.
+
+---
+
+## 6. Redeploy the **frontend** (Vercel)
+
+Vercel is wired to your Git repo, so:
+1. Commit + push your `frontend` changes (you did this in section 1) → Vercel **auto-builds and deploys**.
+2. To redeploy without a code change (e.g. after changing an env var): **Vercel → your project → Deployments → … → Redeploy**.
+3. If you changed `VITE_API_BASE`: **Vercel → Settings → Environment Variables**, update it, then **redeploy** (env var changes only take effect on a new build).
+
+---
+
+## 7. Verify every deploy (smoke test)
+
+1. Health:
+   ```
+   https://attweb-uat-api-18776.azurewebsites.net/health
+   ```
+   ✅ `{"status":"ok","env":"uat"}`.
+2. Watch logs during first use (catches crashes, OOM, DB errors):
+   ```cmd
+   az webapp log tail -g %RG% -n %APP%
+   ```
+   Reproduce the feature you changed while this streams. Ctrl+C to stop.
+3. Exercise the actual changed flow in the UI (and the heavy path — a photo upload — if you touched enrollment).
+
+---
+
+## 8. Rollback (when a deploy breaks UAT)
+
+Because each deploy used a unique tag, reverting is instant — point back at the previous good tag and restart:
+```cmd
+az webapp config container set -n %APP% -g %RG% --container-image-name %ACR%.azurecr.io/attweb-backend:<previous-good-tag>
+az webapp restart -g %RG% -n %APP%
+```
+List what tags you have to choose from:
+```cmd
+az acr repository show-tags -n %ACR% --repository attweb-backend -o table
+```
+(For the frontend, Vercel → Deployments → pick a previous deployment → **Promote to Production**.)
+
+---
+
+## 9. Cost reminder (unchanged by redeploys)
+
+Redeploying doesn't add cost. Keep using your pause/resume habit between test sessions:
+```cmd
+az webapp stop  -g %RG% -n %APP%    :: pause
+az webapp start -g %RG% -n %APP%    :: resume
+```
+
+---
+
+### The 90-second version (backend code change)
+```cmd
+:: 1. test + commit locally
+.venv\Scripts\python.exe -m pytest -q
+git add -A && git commit -m "change" && git push
+
+:: 2. set vars
+set RG=attweb-uat-rg & set ACR=attwebuatacr18776 & set APP=attweb-uat-api-18776
+
+:: 3. build + ship a fresh tag
+set TAG=2026-10-02-1
+az acr build --registry %ACR% --image attweb-backend:%TAG% .
+az webapp config container set -n %APP% -g %RG% --container-image-name %ACR%.azurecr.io/attweb-backend:%TAG%
+az webapp restart -g %RG% -n %APP%
+
+:: 4. verify
+start https://attweb-uat-api-18776.azurewebsites.net/health
+```
+
+Frontend-only change? Just `git push` and let Vercel build. Env-var-only change? `appsettings set` + `restart`. DB column added? ALTER Neon too.
+
+Want me to save this as a `REDEPLOY.md` in your repo so it's version-controlled alongside the code, or generate a `.bat` script that runs the backend redeploy flow end-to-end with a tag you pass in?

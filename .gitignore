@@ -20,6 +20,7 @@ edge_queue/
 # Field attendance audit selfies + avatars (dev filesystem storage; object storage in prod)
 backend-api/data/field_selfies/
 backend-api/data/avatars/
+backend-api/data/signage_media/
 
 # Node / frontend
 node_modules/

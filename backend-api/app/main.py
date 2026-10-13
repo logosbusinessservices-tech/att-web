@@ -25,6 +25,7 @@ from app.routers import (
     events,
     field,
     notifications,
+    signage_media,
     supervisor,
 )
 
@@ -58,6 +59,7 @@ app.include_router(analytics.router)
 app.include_router(disputes.router)
 app.include_router(events.router)
 app.include_router(edge.router)
+app.include_router(signage_media.router)
 app.include_router(notifications.router)
 
 

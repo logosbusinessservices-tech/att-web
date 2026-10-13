@@ -3,7 +3,7 @@ import MenuButton from '../components/MenuButton.jsx'
 import { useAuth } from '../lib/auth.jsx'
 import {
   ApprovalsIcon, BellIcon, CalendarIcon, DashboardIcon, HolidayIcon, LeaveIcon, MegaphoneIcon,
-  ProfileIcon,
+  ProfileIcon, SlidesIcon,
 } from '../components/icons.jsx'
 
 export default function AssistantHome() {
@@ -31,6 +31,9 @@ export default function AssistantHome() {
           <MenuButton icon={<LeaveIcon />} label="Apply Work From Home/Leave" to="/assistant/leave" />
           <MenuButton icon={<HolidayIcon />} label="Holidays" to="/assistant/holidays" />
           <MenuButton icon={<MegaphoneIcon />} label="Display Messages" to="/assistant/display-messages" />
+          {user?.external_id === 'EA001' && (
+            <MenuButton icon={<SlidesIcon />} label="Signage Media" to="/assistant/signage-media" />
+          )}
         </div>
       </main>
     </div>

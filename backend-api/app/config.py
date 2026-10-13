@@ -108,6 +108,12 @@ class Settings(BaseSettings):
     display_message_max_chars: int = 150
     display_message_max_count: int = 8
 
+    # ── Signage media (image/video slides, EA001 super-admin only) ───────────
+    signage_media_max_count: int = 8
+    signage_media_max_bytes: int = 100 * 1024 * 1024  # 100 MB
+    storage_container_signage: str = "signage-media"
+    signage_media_dir: str = "./data/signage_media"
+
     # Display timezone (storage is always UTC). Attendance days + late checks
     # are computed in THIS timezone.
     display_timezone: str = "Asia/Kolkata"

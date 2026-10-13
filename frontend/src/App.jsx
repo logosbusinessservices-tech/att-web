@@ -19,6 +19,7 @@ import FieldApprovals from './pages/FieldApprovals.jsx'
 import EmployeeSettings from './pages/EmployeeSettings.jsx'
 import ManageAccounts from './pages/ManageAccounts.jsx'
 import DisplayMessages from './pages/DisplayMessages.jsx'
+import SignageMedia from './pages/SignageMedia.jsx'
 import Inbox from './pages/Inbox.jsx'
 // Charts (recharts) are heavy; load the Analytics page only when opened.
 const Analytics = lazy(() => import('./pages/Analytics.jsx'))
@@ -170,6 +171,10 @@ export default function App() {
       <Route
         path="/assistant/display-messages"
         element={<Protected role="assistant"><DisplayMessages back="/assistant" /></Protected>}
+      />
+      <Route
+        path="/assistant/signage-media"
+        element={<Protected role="assistant"><SignageMedia back="/assistant" /></Protected>}
       />
     </Routes>
   )

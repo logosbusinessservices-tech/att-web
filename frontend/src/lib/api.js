@@ -440,6 +440,32 @@ export const api = {
     }))
   },
 
+  // ── EA001 super-admin: signage media (image/video slides) ──
+  async signageMedia() {
+    return handle(await fetch(`${BASE}/assistant/signage-media`, { headers: authHeaders() }))
+  },
+  async uploadSignageMedia(file) {
+    const form = new FormData()
+    form.append('file', file)
+    return handle(await fetch(`${BASE}/assistant/signage-media`, {
+      method: 'POST', headers: authHeaders(), body: form,
+    }))
+  },
+  async removeSignageMedia(id) {
+    return handle(await fetch(`${BASE}/assistant/signage-media/${id}`, {
+      method: 'DELETE', headers: authHeaders(),
+    }))
+  },
+  async reorderSignageMedia(ids) {
+    return handle(await fetch(`${BASE}/assistant/signage-media/order`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ ids }),
+    }))
+  },
+  signageMediaPreviewUrl(id) {
+    return `${BASE}/assistant/signage-media/${id}/preview`
+  },
+
   async myAttendance(limit = 100) {
     return handle(
       await fetch(`${BASE}/attendance/me?limit=${limit}`, { headers: authHeaders() })

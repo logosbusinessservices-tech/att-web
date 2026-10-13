@@ -16,6 +16,7 @@ BLOB_PREFIX = "blob:"
 AVATARS = "avatars"
 FIELD_SELFIES = "field_selfies"
 EMPLOYEE_PHOTOS = "employee_photos"
+SIGNAGE_MEDIA = "signage_media"
 
 
 def using_blob() -> bool:
@@ -27,6 +28,7 @@ def _container(kind: str) -> str:
         AVATARS: settings.storage_container_avatars,
         FIELD_SELFIES: settings.storage_container_field_selfies,
         EMPLOYEE_PHOTOS: settings.storage_container_employee_photos,
+        SIGNAGE_MEDIA: settings.storage_container_signage,
     }[kind]
 
 
@@ -35,6 +37,7 @@ def _local_dir(kind: str) -> str:
         AVATARS: settings.avatar_dir,
         FIELD_SELFIES: settings.field_selfie_dir,
         EMPLOYEE_PHOTOS: settings.employee_photo_dir,
+        SIGNAGE_MEDIA: settings.signage_media_dir,
     }[kind]
 
 
