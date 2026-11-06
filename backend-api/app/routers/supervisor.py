@@ -86,8 +86,23 @@ def _dept_scope(current: Person, requested: int | None) -> int | None:
     return current.department_id
 
 
+def _mgmt_roles(current: Person, roles: str | None, types: str | None) -> str | None:
+    """The chief's default view includes supervisors alongside employees.
+
+    Honors an explicit `roles` or legacy `types` when provided; otherwise
+    the chief defaults to both roles, department supervisors default to
+    employees only (handled downstream in analytics._people).
+    """
+    if roles or types:
+        return roles
+    if _is_chief(current):
+        return "employee,supervisor"
+    return roles
+
+
+# Kept temporarily so any remaining caller inside this file still works;
+# routes updated in Phase 1 use `_mgmt_roles` directly.
 def _mgmt_types(current: Person, types: str | None) -> str | None:
-    """The chief's default view includes supervisors alongside employees."""
     if types is None and _is_chief(current):
         return "office,field,supervisor"
     return types
@@ -106,23 +121,33 @@ def overview(
     from_date: date | None = Query(default=None),
     to_date: date | None = Query(default=None),
     department_id: int | None = Query(default=None),
-    types: str | None = Query(default=None),
+    roles: str | None = Query(default=None),
+    sources: str | None = Query(default=None),
+    types: str | None = Query(default=None),       # legacy
     current: Person = Depends(require_supervisor),
     db: Session = Depends(get_db),
 ):
-    """Per-employee rollup over a range. Optionally filter by department + staff type."""
+    """Per-employee rollup over a range. Optionally filter by department + role + capture type."""
     if from_date is None or to_date is None:
         from_date, to_date = _default_month()
     department_id = _dept_scope(current, department_id)
-    types = _mgmt_types(current, types)
-    return _compute_rollups(db, from_date, to_date, department_id, types)
+    roles = _mgmt_roles(current, roles, types)
+    return _compute_rollups(db, from_date, to_date, department_id,
+                            types=types, roles=roles, sources=sources)
 
 
 def _compute_rollups(
-    db: Session, from_date: date, to_date: date, department_id: int | None, types: str | None = None
+    db: Session,
+    from_date: date,
+    to_date: date,
+    department_id: int | None,
+    types: str | None = None,
+    roles: str | None = None,
+    sources: str | None = None,
 ) -> list[PersonRollup]:
     from app.services import analytics
-    people = analytics._people(db, department_id, types)
+    people = analytics._people(db, department_id, types=types, roles=roles)
+    srcs = analytics._sources_set(sources)
 
     # Preload department names once.
     dept_names = {
@@ -131,12 +156,9 @@ def _compute_rollups(
 
     rollups: list[PersonRollup] = []
     for p in people:
-        events = db.execute(
-            select(AttendanceEvent).where(AttendanceEvent.person_id == p.id)
-        ).scalars().all()
-        ov = corrections.latest_overrides(db, p.id, from_date, to_date)
-        days = svc.summarize_person(events, from_date, to_date, ov)
+        days = analytics._person_days(db, p, from_date, to_date, srcs)
         stats = svc.compute_stats(days, from_date, to_date)
+        
         rollups.append(
             PersonRollup(
                 person_id=p.id,

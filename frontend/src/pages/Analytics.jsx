@@ -17,7 +17,24 @@ function monthStart() {
 }
 
 const PIE_COLORS = { camera: '#3b82f6', field: '#10b981', manual: '#a855f7' }
-const TYPE_OPTIONS = [['field', 'Field'], ['supervisor', 'Supervisors'], ['office', 'Office']]
+
+// ── NEW FILTERS (Phase 1) ────────────────────────────────────────────────
+// Capture type = how the event was CAPTURED (attendance_events.source).
+// Role         = what the PERSON is (persons.role).
+// Both are multi-select. All-checked is the default and the auto-revert
+// state when the user clears everything.
+const CAPTURE_TYPES = [
+  ['camera', 'Camera'],
+  ['field', 'Field'],
+  ['manual', 'Manual'],
+]
+const ROLES = [
+  ['employee', 'Employee'],
+  ['supervisor', 'Supervisor'],
+]
+const ALL_SOURCES = CAPTURE_TYPES.map(([v]) => v)
+const DEFAULT_ROLES = ['employee']
+
 const CHART_ORDER = [
   ['trend', 'Attendance % trend'],
   ['pa', 'Present vs Absent'],
@@ -33,6 +50,23 @@ function Kpi({ label, value, tone = 'text-slate-800' }) {
       <div className={`text-2xl font-bold ${tone}`}>{value}</div>
       <div className="text-[11px] text-slate-500 mt-0.5">{label}</div>
     </div>
+  )
+}
+
+// A labeled checkbox for the new multi-select filter groups.
+function CheckPill({ label, checked, onToggle }) {
+  return (
+    <label className={`inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded-full border cursor-pointer select-none ${
+      checked ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-700 border-slate-300'
+    }`}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        className="w-3 h-3 accent-white cursor-pointer"
+      />
+      {label}
+    </label>
   )
 }
 
@@ -177,7 +211,9 @@ export default function Analytics({ back = '/supervisor' }) {
   const [to, setTo] = useState(istToday())
   const [granularity, setGranularity] = useState('day')
   const [deptId, setDeptId] = useState('')
-  const [types, setTypes] = useState([])   // [] = all employees
+  // ── NEW FILTERS ──
+  const [sources, setSources] = useState(ALL_SOURCES)             // all three by default
+  const [roles, setRoles] = useState(DEFAULT_ROLES)                // employee by default
   const [depts, setDepts] = useState([])
 
   const [summary, setSummary] = useState(null)
@@ -193,7 +229,10 @@ export default function Analytics({ back = '/supervisor' }) {
   const chartRefs = useRef({})
   const setChartRef = (key) => (el) => { chartRefs.current[key] = el }
 
-  const typesParam = types.length ? types.join(',') : undefined
+  // Serialize filters for the API. Empty -> undefined so the backend's
+  // defaults apply (which also means "all" in both cases).
+  const sourcesParam = sources.length === ALL_SOURCES.length ? undefined : sources.join(',')
+  const rolesParam = roles.length ? roles.join(',') : undefined
 
   useEffect(() => { api.departments().then(setDepts).catch(() => {}) }, [])
 
@@ -202,26 +241,40 @@ export default function Analytics({ back = '/supervisor' }) {
     const dept = deptId || undefined
     try {
       const [s, t, bd, sp, ov, lo, bdz, bet] = await Promise.all([
-        api.analyticsSummary(from, to, dept, typesParam),
-        api.analyticsTrend(from, to, dept, granularity, typesParam),
-        api.analyticsByDepartment(from, to, typesParam),
-        api.analyticsSourceSplit(from, to, dept, typesParam),
-        api.supervisorOverview(from, to, dept, typesParam),
-        api.analyticsLowest(from, to, dept, 8, typesParam),
-        api.analyticsByAttribute('designation', from, to, dept, typesParam),
-        api.analyticsByAttribute('employment_type', from, to, dept, typesParam),
+        api.analyticsSummary(from, to, dept, { roles: rolesParam, sources: sourcesParam }),
+        api.analyticsTrend(from, to, dept, granularity, { roles: rolesParam, sources: sourcesParam }),
+        api.analyticsByDepartment(from, to, { roles: rolesParam, sources: sourcesParam }),
+        api.analyticsSourceSplit(from, to, dept, { roles: rolesParam, sources: sourcesParam }),
+        api.supervisorOverview(from, to, dept, { roles: rolesParam, sources: sourcesParam }),
+        api.analyticsLowest(from, to, dept, 8, { roles: rolesParam, sources: sourcesParam }),
+        api.analyticsByAttribute('designation', from, to, dept, { roles: rolesParam, sources: sourcesParam }),
+        api.analyticsByAttribute('employment_type', from, to, dept, { roles: rolesParam, sources: sourcesParam }),
       ])
       setSummary(s); setTrend(t); setByDept(bd); setSplit(sp); setOverview(ov); setLowest(lo)
       setByDesignation(bdz); setByEmployment(bet)
     } catch (e) {
       setError(e.message)
     }
-  }, [from, to, granularity, deptId, typesParam])
+  }, [from, to, granularity, deptId, rolesParam, sourcesParam])
 
   useEffect(() => { load() }, [load])
 
-  function toggleType(t) {
-    setTypes((cur) => cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t])
+  // Checkbox toggle for Capture type.
+  // If the user unchecks everything, auto-revert to all three checked
+  // (the sensible default — an empty filter would show all zeroes).
+  function toggleSource(v) {
+    setSources((cur) => {
+      const next = cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v]
+      return next.length === 0 ? ALL_SOURCES.slice() : next
+    })
+  }
+
+  // Same auto-revert behaviour for Role.
+  function toggleRole(v) {
+    setRoles((cur) => {
+      const next = cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v]
+      return next.length === 0 ? DEFAULT_ROLES.slice() : next
+    })
   }
 
   const hoursByEmployee = useMemo(
@@ -263,9 +316,17 @@ export default function Analytics({ back = '/supervisor' }) {
   }, [overview])
 
   const deptName = deptId ? depts.find((d) => String(d.id) === String(deptId))?.name : null
+  // Build a readable subtitle that lists active filters.
+  const filterBits = []
+  if (sources.length < ALL_SOURCES.length) {
+    filterBits.push(`capture: ${sources.map((s) => CAPTURE_TYPES.find(([v]) => v === s)[1]).join(', ')}`)
+  }
+  if (!(roles.length === DEFAULT_ROLES.length && roles.includes('employee'))) {
+    filterBits.push(`role: ${roles.map((r) => ROLES.find(([v]) => v === r)[1]).join(', ')}`)
+  }
   const meta = {
     title: 'Attendance Analytics',
-    subtitle: `${from} to ${to}${deptName ? ` · ${deptName}` : ''}${types.length ? ` · ${types.join(', ')}` : ''}`,
+    subtitle: `${from} to ${to}${deptName ? ` · ${deptName}` : ''}${filterBits.length ? ` · ${filterBits.join(' · ')}` : ''}`,
   }
   function collectCharts() {
     return CHART_ORDER.map(([k, t]) => ({ title: t, el: chartRefs.current[k] })).filter((c) => c.el)
@@ -306,14 +367,29 @@ export default function Analytics({ back = '/supervisor' }) {
             </div>
           </div>
 
-          {/* Staff-type multiselect */}
+          {/* NEW: Capture type (how the attendance was logged) */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-slate-500">Staff type</span>
-            <button onClick={() => setTypes([])}
-              className={`text-xs px-3 py-1 rounded-full border ${types.length === 0 ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300'}`}>All</button>
-            {TYPE_OPTIONS.map(([val, label]) => (
-              <button key={val} onClick={() => toggleType(val)}
-                className={`text-xs px-3 py-1 rounded-full border ${types.includes(val) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-600 border-slate-300'}`}>{label}</button>
+            <span className="text-xs text-slate-500 w-20">Capture type</span>
+            {CAPTURE_TYPES.map(([val, label]) => (
+              <CheckPill
+                key={val}
+                label={label}
+                checked={sources.includes(val)}
+                onToggle={() => toggleSource(val)}
+              />
+            ))}
+          </div>
+
+          {/* NEW: Role (who the person is) */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-slate-500 w-20">Role</span>
+            {ROLES.map(([val, label]) => (
+              <CheckPill
+                key={val}
+                label={label}
+                checked={roles.includes(val)}
+                onToggle={() => toggleRole(val)}
+              />
             ))}
 
             {/* Export all */}
@@ -330,7 +406,7 @@ export default function Analytics({ back = '/supervisor' }) {
 
         {error && <p className="text-red-600 text-sm">{error}</p>}
 
-        {/* KPIs — react to every filter incl. staff type */}
+        {/* KPIs — react to every filter */}
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
           <Kpi label="Attendance %" value={summary ? `${summary.attendance_pct}%` : '–'} tone="text-sky-600" />
           <Kpi label="Present" value={summary?.present ?? '–'} tone="text-emerald-600" />
@@ -423,8 +499,9 @@ export default function Analytics({ back = '/supervisor' }) {
           </div>
 
         <p className="text-[11px] text-slate-400 text-center pt-1">
-          Filter by department + staff type. Export the charts (PDF / PPT), each visual (CSV / PNG),
-          or the department matrix (Excel).
+          Capture type is how attendance was logged (camera / field / manual).
+          Role is who the person is. Both default to showing everything.
+          Export the charts (PDF / PPT), each visual (CSV / PNG), or the department matrix (Excel).
         </p>
       </main>
     </div>

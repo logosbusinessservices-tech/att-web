@@ -85,23 +85,30 @@ def test_types_supervisor_only(client, sup_headers):
     assert r.json()["active_employees"] == 1  # SUP001 (own department)
 
 
-def test_types_field_only(client, sup_headers, db_session):
+def test_types_field_now_means_all_employees(client, sup_headers, db_session):
+    """After the Phase 1 refactor, the legacy ?types=field param just means
+    'employees' (field is now a capture-type filter, not a person filter).
+    So all Operations employees appear regardless of field_scan_enabled.
+    """
     from app.db.models import Person
     p = db_session.query(Person).filter_by(external_id="EMP001").one()
     p.field_scan_enabled = True
     db_session.commit()
     r = client.get("/supervisor/analytics/summary?types=field", headers=sup_headers)
-    assert r.json()["active_employees"] == 1  # only EMP001 now
+    # EMP001 + EMP002 both count now.
+    assert r.json()["active_employees"] == 2
 
 
 def test_types_multiselect_union(client, sup_headers, db_session):
+    """types=field,supervisor now means employees + supervisors, not a
+    combination of field-enabled people + supervisors."""
     from app.db.models import Person
     p = db_session.query(Person).filter_by(external_id="EMP001").one()
     p.field_scan_enabled = True
     db_session.commit()
-    # field (EMP001) + supervisor (SUP001) in Operations = 2.
     r = client.get("/supervisor/analytics/summary?types=field,supervisor", headers=sup_headers)
-    assert r.json()["active_employees"] == 2
+    # EMP001 + EMP002 (employees) + SUP001 (supervisor) in Operations = 3.
+    assert r.json()["active_employees"] == 3
 
 
 def test_overview_types_filter(client, sup_headers):

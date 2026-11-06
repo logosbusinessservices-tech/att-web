@@ -2,6 +2,13 @@
 
 Role-guarded. Optional department_id filter mirrors the overview table. All
 figures come from the same day summarizer, so charts and tables always agree.
+
+Phase 1 filter model:
+  - `roles`   (employee | supervisor)        — which people to include
+  - `sources` (camera | field | manual)      — which capture types count toward
+                                                presence
+The legacy `types` parameter is still accepted and mapped to `roles` for
+backward compatibility with old bookmarks and clients.
 """
 
 from datetime import date
@@ -43,10 +50,18 @@ def _dept_scope(current: Person, requested: int | None) -> int | None:
     return requested if _is_chief(current) else current.department_id
 
 
-def _mgmt_types(current: Person, types: str | None) -> str | None:
-    if types is None and _is_chief(current):
-        return "office,field,supervisor"
-    return types
+def _mgmt_roles(current: Person, roles: str | None, types: str | None) -> str | None:
+    """Apply the chief's default role view.
+
+    If the caller sent an explicit `roles` or legacy `types`, honor it.
+    Otherwise the chief's default includes supervisors alongside employees;
+    department supervisors default to employees only (handled downstream).
+    """
+    if roles or types:
+        return roles
+    if _is_chief(current):
+        return "employee,supervisor"
+    return roles
 
 
 @router.get("/summary", response_model=AnalyticsSummary)
@@ -54,14 +69,17 @@ def analytics_summary(
     from_date: date | None = Query(default=None),
     to_date: date | None = Query(default=None),
     department_id: int | None = Query(default=None),
-    types: str | None = Query(default=None),
+    roles: str | None = Query(default=None),
+    sources: str | None = Query(default=None),
+    types: str | None = Query(default=None),       # legacy
     current: Person = Depends(require_supervisor),
     db: Session = Depends(get_db),
 ):
     from_date, to_date = _range(from_date, to_date)
     department_id = _dept_scope(current, department_id)
-    types = _mgmt_types(current, types)
-    data = analytics.summary(db, from_date, to_date, department_id, types)
+    roles = _mgmt_roles(current, roles, types)
+    data = analytics.summary(db, from_date, to_date, department_id,
+                             types=types, roles=roles, sources=sources)
 
     # Pending field approvals in scope (own department, or all for the chief).
     q = (
@@ -86,7 +104,9 @@ def analytics_trend(
     to_date: date | None = Query(default=None),
     department_id: int | None = Query(default=None),
     granularity: str = Query(default="day"),
-    types: str | None = Query(default=None),
+    roles: str | None = Query(default=None),
+    sources: str | None = Query(default=None),
+    types: str | None = Query(default=None),       # legacy
     current: Person = Depends(require_supervisor),
     db: Session = Depends(get_db),
 ):
@@ -94,23 +114,28 @@ def analytics_trend(
         granularity = "day"
     from_date, to_date = _range(from_date, to_date)
     department_id = _dept_scope(current, department_id)
-    types = _mgmt_types(current, types)
-    return analytics.trend(db, from_date, to_date, department_id, granularity, types)
+    roles = _mgmt_roles(current, roles, types)
+    return analytics.trend(db, from_date, to_date, department_id, granularity,
+                           types=types, roles=roles, sources=sources)
 
 
 @router.get("/by-department", response_model=list[DeptStat])
 def analytics_by_department(
     from_date: date | None = Query(default=None),
     to_date: date | None = Query(default=None),
-    types: str | None = Query(default=None),
+    roles: str | None = Query(default=None),
+    sources: str | None = Query(default=None),
+    types: str | None = Query(default=None),       # legacy
     current: Person = Depends(require_supervisor),
     db: Session = Depends(get_db),
 ):
     from_date, to_date = _range(from_date, to_date)
     # Non-chief managers only see their own department's row.
     department_id = None if _is_chief(current) else current.department_id
-    types = _mgmt_types(current, types)
-    return analytics.by_department(db, from_date, to_date, types, department_id)
+    roles = _mgmt_roles(current, roles, types)
+    return analytics.by_department(db, from_date, to_date,
+                                   types=types, department_id=department_id,
+                                   roles=roles, sources=sources)
 
 
 @router.get("/by-attribute", response_model=list[DimensionStat])
@@ -119,7 +144,9 @@ def analytics_by_attribute(
     from_date: date | None = Query(default=None),
     to_date: date | None = Query(default=None),
     department_id: int | None = Query(default=None),
-    types: str | None = Query(default=None),
+    roles: str | None = Query(default=None),
+    sources: str | None = Query(default=None),
+    types: str | None = Query(default=None),       # legacy
     current: Person = Depends(require_supervisor),
     db: Session = Depends(get_db),
 ):
@@ -128,8 +155,10 @@ def analytics_by_attribute(
         raise HTTPException(status_code=400, detail="Invalid attribute")
     from_date, to_date = _range(from_date, to_date)
     department_id = _dept_scope(current, department_id)
-    types = _mgmt_types(current, types)
-    return analytics.by_attribute(db, from_date, to_date, attribute, types, department_id)
+    roles = _mgmt_roles(current, roles, types)
+    return analytics.by_attribute(db, from_date, to_date, attribute,
+                                  types=types, department_id=department_id,
+                                  roles=roles, sources=sources)
 
 
 @router.get("/source-split", response_model=SourceSplit)
@@ -137,14 +166,19 @@ def analytics_source_split(
     from_date: date | None = Query(default=None),
     to_date: date | None = Query(default=None),
     department_id: int | None = Query(default=None),
-    types: str | None = Query(default=None),
+    roles: str | None = Query(default=None),
+    sources: str | None = Query(default=None),
+    types: str | None = Query(default=None),       # legacy
     current: Person = Depends(require_supervisor),
     db: Session = Depends(get_db),
 ):
     from_date, to_date = _range(from_date, to_date)
     department_id = _dept_scope(current, department_id)
-    types = _mgmt_types(current, types)
-    return SourceSplit(**analytics.source_split(db, from_date, to_date, department_id, types))
+    roles = _mgmt_roles(current, roles, types)
+    return SourceSplit(**analytics.source_split(
+        db, from_date, to_date, department_id,
+        types=types, roles=roles, sources=sources,
+    ))
 
 
 @router.get("/lowest-attendance", response_model=list[LowAttendanceRow])
@@ -153,11 +187,15 @@ def analytics_lowest(
     to_date: date | None = Query(default=None),
     department_id: int | None = Query(default=None),
     limit: int = Query(default=10, ge=1, le=50),
-    types: str | None = Query(default=None),
+    roles: str | None = Query(default=None),
+    sources: str | None = Query(default=None),
+    types: str | None = Query(default=None),       # legacy
     current: Person = Depends(require_supervisor),
     db: Session = Depends(get_db),
 ):
     from_date, to_date = _range(from_date, to_date)
     department_id = _dept_scope(current, department_id)
-    types = _mgmt_types(current, types)
-    return analytics.lowest_attendance(db, from_date, to_date, department_id, limit, types)
+    roles = _mgmt_roles(current, roles, types)
+    return analytics.lowest_attendance(db, from_date, to_date, department_id,
+                                       limit, types=types, roles=roles,
+                                       sources=sources)

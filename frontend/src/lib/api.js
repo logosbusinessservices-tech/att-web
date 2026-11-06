@@ -305,38 +305,44 @@ export const api = {
     )
   },
 
-  // ── Field attendance (face + GPS) ──
-  async fieldStatus() {
-    return handle(await fetch(`${BASE}/attendance/field/status`, { headers: authHeaders() }))
+ // ── Supervisor analytics ──
+  // The last argument became an options object: { roles, sources, types }.
+  // `types` is kept for backward compat with older callers.
+  // If a string is passed instead of an object, it's treated as legacy `types`.
+  _normFilters(opts) {
+    if (!opts) return {}
+    if (typeof opts === 'string') return { types: opts }
+    return opts
   },
 
-  async stations() {
-    return handle(await fetch(`${BASE}/attendance/field/stations`, { headers: authHeaders() }))
-  },
-
-  // ── Supervisor analytics ──
-  async analyticsSummary(from, to, dept, types) {
-    const q = _q({ from_date: from, to_date: to, department_id: dept, types })
+  async analyticsSummary(from, to, dept, opts) {
+    const f = this._normFilters(opts)
+    const q = _q({ from_date: from, to_date: to, department_id: dept, roles: f.roles, sources: f.sources, types: f.types })
     return handle(await fetch(`${BASE}/supervisor/analytics/summary${q}`, { headers: authHeaders() }))
   },
-  async analyticsTrend(from, to, dept, granularity = 'day', types) {
-    const q = _q({ from_date: from, to_date: to, department_id: dept, granularity, types })
+  async analyticsTrend(from, to, dept, granularity = 'day', opts) {
+    const f = this._normFilters(opts)
+    const q = _q({ from_date: from, to_date: to, department_id: dept, granularity, roles: f.roles, sources: f.sources, types: f.types })
     return handle(await fetch(`${BASE}/supervisor/analytics/trend${q}`, { headers: authHeaders() }))
   },
-  async analyticsByDepartment(from, to, types) {
-    const q = _q({ from_date: from, to_date: to, types })
+  async analyticsByDepartment(from, to, opts) {
+    const f = this._normFilters(opts)
+    const q = _q({ from_date: from, to_date: to, roles: f.roles, sources: f.sources, types: f.types })
     return handle(await fetch(`${BASE}/supervisor/analytics/by-department${q}`, { headers: authHeaders() }))
   },
-  async analyticsByAttribute(attribute, from, to, dept, types) {
-    const q = _q({ attribute, from_date: from, to_date: to, department_id: dept, types })
+  async analyticsByAttribute(attribute, from, to, dept, opts) {
+    const f = this._normFilters(opts)
+    const q = _q({ attribute, from_date: from, to_date: to, department_id: dept, roles: f.roles, sources: f.sources, types: f.types })
     return handle(await fetch(`${BASE}/supervisor/analytics/by-attribute${q}`, { headers: authHeaders() }))
   },
-  async analyticsSourceSplit(from, to, dept, types) {
-    const q = _q({ from_date: from, to_date: to, department_id: dept, types })
+  async analyticsSourceSplit(from, to, dept, opts) {
+    const f = this._normFilters(opts)
+    const q = _q({ from_date: from, to_date: to, department_id: dept, roles: f.roles, sources: f.sources, types: f.types })
     return handle(await fetch(`${BASE}/supervisor/analytics/source-split${q}`, { headers: authHeaders() }))
   },
-  async analyticsLowest(from, to, dept, limit = 10, types) {
-    const q = _q({ from_date: from, to_date: to, department_id: dept, limit, types })
+  async analyticsLowest(from, to, dept, limit = 10, opts) {
+    const f = this._normFilters(opts)
+    const q = _q({ from_date: from, to_date: to, department_id: dept, limit, roles: f.roles, sources: f.sources, types: f.types })
     return handle(await fetch(`${BASE}/supervisor/analytics/lowest-attendance${q}`, { headers: authHeaders() }))
   },
 
@@ -487,11 +493,15 @@ export const api = {
   },
 
   // Supervisor
-  async supervisorOverview(fromDate, toDate, departmentId, types) {
+    // Supervisor
+  async supervisorOverview(fromDate, toDate, departmentId, opts) {
+    const f = this._normFilters(opts)
     const p = new URLSearchParams()
     if (fromDate && toDate) { p.set('from_date', fromDate); p.set('to_date', toDate) }
     if (departmentId) p.set('department_id', departmentId)
-    if (types) p.set('types', types)
+    if (f.roles) p.set('roles', f.roles)
+    if (f.sources) p.set('sources', f.sources)
+    if (f.types) p.set('types', f.types)
     const q = p.toString() ? `?${p}` : ''
     return handle(await fetch(`${BASE}/supervisor/attendance/overview${q}`, { headers: authHeaders() }))
   },
