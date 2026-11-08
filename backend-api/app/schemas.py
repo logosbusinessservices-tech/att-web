@@ -113,7 +113,7 @@ class DaySummary(BaseModel):
 class DaySummaryAdmin(DaySummary):
     """Supervisor-scoped DaySummary: events include the internal `crop_path`."""
     events: list[AttendanceEventOutAdmin] = []
-    
+
 class PersonDaySummary(DaySummary):
     """A day summary tagged with the person (for supervisor views)."""
     person_id: int
@@ -234,6 +234,39 @@ class LowAttendanceRow(BaseModel):
     present: int
     absent: int
 
+# ── Visitor analytics (Phase 3; chief-only) ──────────────────────────────────
+class VisitorSummary(BaseModel):
+    """Totals for the top KPI cards on the Analytics page."""
+    total_events: int
+    entries: int
+    exits: int
+
+
+class VisitorEventOut(BaseModel):
+    """One raw visitor event inside a day row.
+
+    Mirrors AttendanceEventOut but intentionally slim: visitors have no
+    person link, no field/manual GPS fields, and the crop_path is exposed
+    (chief-only endpoint, same permission as the surrounding day data).
+    """
+    id: int
+    camera_label: str
+    direction: str | None = None
+    similarity: float | None = None
+    event_time: UtcDatetime
+    crop_path: str | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class VisitorDay(BaseModel):
+    """One day's worth of visitor events, with precomputed header totals."""
+    date: str                       # ISO date in IST
+    total_events: int
+    entries: int
+    exits: int
+    events: list[VisitorEventOut] = []
 
 # ── Edge event ingestion (POST /events) ──────────────────────────────────────
 class EdgeEventIn(BaseModel):

@@ -389,6 +389,119 @@ function FragmentEmployee({ e, isOpen, onToggle, from, to }) {
   )
 }
 
+// ── Visitor Details (Phase 3, chief-only) ──────────────────────────────
+// A per-event row showing the visitor's time + direction + clickable crop.
+function VisitorEventRow({ event }) {
+  const time = fmtTime(event.event_time)
+  const direction = event.direction || 'seen'
+  const sim = event.similarity != null ? ` · ${(event.similarity * 100).toFixed(0)}%` : ''
+  return (
+    <li className="flex items-center gap-3 py-1.5 border-t border-slate-50">
+      <div className="flex-shrink-0 w-12 h-12">
+        {event.crop_path ? (
+          <AuthImage
+            src={api.visitorCropUrl(event.id)}
+            alt={`Visitor at ${time}`}
+            className="w-12 h-12 rounded object-cover border border-slate-200"
+            fallback={
+              <div className="w-12 h-12 rounded bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-300 text-lg">
+                ⋯
+              </div>
+            }
+            zoomable
+          />
+        ) : (
+          <div className="w-12 h-12 rounded bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-300 text-xl"
+               title="Crop not available">
+            👤
+          </div>
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-medium text-slate-800 tabular-nums">{time}</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+            Visitor
+          </span>
+          <span className="text-xs text-slate-500">{direction}{sim}</span>
+        </div>
+        <div className="text-[11px] text-slate-400 truncate">{event.camera_label}</div>
+      </div>
+    </li>
+  )
+}
+
+// One day's visitor events, collapsed by default. Click the header to expand.
+function VisitorDayCard({ day }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="bg-white rounded-lg border border-slate-100">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between gap-2 p-3 text-left hover:bg-slate-50"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-slate-400 text-xs">{open ? '▾' : '▸'}</span>
+          <span className="text-sm font-medium text-slate-700">{fmtDayLabel(day.date)}</span>
+        </div>
+        <div className="flex items-center gap-3 text-xs text-slate-600 tabular-nums">
+          <span>{day.total_events} visitors</span>
+          <span className="text-emerald-600">↓ {day.entries} in</span>
+          <span className="text-sky-600">↑ {day.exits} out</span>
+        </div>
+      </button>
+      {open && (
+        <div className="px-3 pb-3">
+          {day.events.length > 0 ? (
+            <ul>
+              {day.events.map((e) => <VisitorEventRow key={e.id} event={e} />)}
+            </ul>
+          ) : (
+            <p className="text-xs text-slate-400 italic pt-2">No events.</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Full Visitor Details matrix — the new section below the department matrix.
+function VisitorMatrix({ from, to }) {
+  const [days, setDays] = useState(null)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    let active = true
+    setErr('')
+    setDays(null)
+    api.visitorsByDay(from, to)
+      .then((d) => { if (active) setDays(d) })
+      .catch((e) => { if (active) setErr(e.message) })
+    return () => { active = false }
+  }, [from, to])
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm p-3">
+      <h3 className="text-sm font-semibold text-slate-800 mb-2">Visitor details</h3>
+      <p className="text-[11px] text-slate-400 mb-2">
+        Every visitor the cameras caught, grouped by day. Click a day to see individual events.
+      </p>
+      {err && <p className="text-xs text-red-600">{err}</p>}
+      {days === null && !err && (
+        <p className="text-xs text-slate-400">Loading…</p>
+      )}
+      {days && days.length === 0 && (
+        <p className="text-xs text-slate-400 italic">No visitors in this period.</p>
+      )}
+      {days && days.length > 0 && (
+        <div className="space-y-2">
+          {days.map((d) => <VisitorDayCard key={d.date} day={d} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Analytics({ back = '/supervisor' }) {
   const { user } = useAuth()
   const isChief = user?.role === 'chief'
@@ -401,6 +514,7 @@ export default function Analytics({ back = '/supervisor' }) {
   const [depts, setDepts] = useState([])
 
   const [summary, setSummary] = useState(null)
+  const [visitorSummary, setVisitorSummary] = useState(null)
   const [trend, setTrend] = useState([])
   const [byDept, setByDept] = useState([])
   const [byDesignation, setByDesignation] = useState([])
@@ -418,7 +532,7 @@ export default function Analytics({ back = '/supervisor' }) {
 
   useEffect(() => { api.departments().then(setDepts).catch(() => {}) }, [])
 
-  const load = useCallback(async () => {
+    const load = useCallback(async () => {
     setError('')
     const dept = deptId || undefined
     try {
@@ -434,10 +548,19 @@ export default function Analytics({ back = '/supervisor' }) {
       ])
       setSummary(s); setTrend(t); setByDept(bd); setSplit(sp); setOverview(ov); setLowest(lo)
       setByDesignation(bdz); setByEmployment(bet)
+
+      // Chief-only: visitor KPIs. Safe to skip quietly for other supervisors.
+      if (isChief) {
+        try {
+          setVisitorSummary(await api.visitorsSummary(from, to))
+        } catch {
+          setVisitorSummary(null)
+        }
+      }
     } catch (e) {
       setError(e.message)
     }
-  }, [from, to, granularity, deptId, rolesParam, sourcesParam])
+  }, [from, to, granularity, deptId, rolesParam, sourcesParam, isChief])
 
   useEffect(() => { load() }, [load])
 
@@ -579,6 +702,15 @@ export default function Analytics({ back = '/supervisor' }) {
           <Kpi label="Field pending" value={summary?.pending_field_approvals ?? '–'} tone="text-amber-600" />
         </div>
 
+        {/* Chief-only: visitor KPI row. */}
+        {isChief && (
+          <div className="grid grid-cols-3 gap-2">
+            <Kpi label="Visitors" value={visitorSummary?.total_events ?? '–'} tone="text-amber-600" />
+            <Kpi label="Visitor entries" value={visitorSummary?.entries ?? '–'} tone="text-emerald-600" />
+            <Kpi label="Visitor exits" value={visitorSummary?.exits ?? '–'} tone="text-sky-600" />
+          </div>
+        )}
+
         <div className="grid md:grid-cols-2 gap-4">
           <ChartCard title="Attendance % trend" csvName="attendance_trend" csvRows={() => trend} innerRef={setChartRef('trend')}>
             <ResponsiveContainer width="100%" height={260}>
@@ -655,6 +787,8 @@ export default function Analytics({ back = '/supervisor' }) {
         </div>
 
         <Matrix rows={matrix} from={from} to={to} />
+
+        {isChief && <VisitorMatrix from={from} to={to} />}
 
         <div className="grid md:grid-cols-2 gap-4">
           <AttributeTable title="By designation" rows={byDesignation} csvName="by_designation" />

@@ -386,6 +386,19 @@ export const api = {
   eventCropUrl(eventId) {
     return `${BASE}/supervisor/events/${eventId}/crop`
   },
+    // ── Visitor analytics (Phase 3, chief-only) ──
+  async visitorsSummary(fromDate, toDate) {
+    const q = fromDate && toDate ? `?from_date=${fromDate}&to_date=${toDate}` : ''
+    return handle(await fetch(`${BASE}/supervisor/visitors/summary${q}`, { headers: authHeaders() }))
+  },
+  async visitorsByDay(fromDate, toDate) {
+    const q = fromDate && toDate ? `?from_date=${fromDate}&to_date=${toDate}` : ''
+    return handle(await fetch(`${BASE}/supervisor/visitors/by-day${q}`, { headers: authHeaders() }))
+  },
+  // URL of a visitor event's crop (served protected; use via AuthImage).
+  visitorCropUrl(eventId) {
+    return `${BASE}/supervisor/visitors/events/${eventId}/crop`
+  },
 
   // ── Supervisor: employee settings/permissions ──
   async getEmployeeSettings(externalId) {

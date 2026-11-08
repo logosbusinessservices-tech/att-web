@@ -27,6 +27,7 @@ from app.routers import (
     notifications,
     signage_media,
     supervisor,
+    visitors,
 )
 
 
@@ -61,6 +62,7 @@ app.include_router(events.router)
 app.include_router(edge.router)
 app.include_router(signage_media.router)
 app.include_router(notifications.router)
+app.include_router(visitors.router)
 
 
 @app.get("/health", tags=["health"])
