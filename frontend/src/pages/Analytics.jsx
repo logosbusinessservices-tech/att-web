@@ -4,8 +4,10 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from 'recharts'
 import AppHeader from '../components/AppHeader.jsx'
+import AuthImage from '../components/AuthImage.jsx'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/auth.jsx'
+import { fmtDayLabel, fmtHours, fmtTime, statusClass, statusLabel } from '../lib/format.js'
 import { downloadCsv, exportChartPng, exportDashboardPdf, exportDashboardPptx, exportMatrixXls } from '../lib/exporters.js'
 
 function istToday() {
@@ -18,11 +20,6 @@ function monthStart() {
 
 const PIE_COLORS = { camera: '#3b82f6', field: '#10b981', manual: '#a855f7' }
 
-// ── NEW FILTERS (Phase 1) ────────────────────────────────────────────────
-// Capture type = how the event was CAPTURED (attendance_events.source).
-// Role         = what the PERSON is (persons.role).
-// Both are multi-select. All-checked is the default and the auto-revert
-// state when the user clears everything.
 const CAPTURE_TYPES = [
   ['camera', 'Camera'],
   ['field', 'Field'],
@@ -34,6 +31,13 @@ const ROLES = [
 ]
 const ALL_SOURCES = CAPTURE_TYPES.map(([v]) => v)
 const DEFAULT_ROLES = ['employee']
+
+// Short source icons used in the drill-down timeline.
+const SOURCE_BADGE = {
+  camera: { icon: '📷', label: 'Camera', color: 'bg-sky-100 text-sky-700' },
+  field: { icon: '📍', label: 'Field', color: 'bg-emerald-100 text-emerald-700' },
+  manual: { icon: '✎', label: 'Manual', color: 'bg-violet-100 text-violet-700' },
+}
 
 const CHART_ORDER = [
   ['trend', 'Attendance % trend'],
@@ -53,7 +57,6 @@ function Kpi({ label, value, tone = 'text-slate-800' }) {
   )
 }
 
-// A labeled checkbox for the new multi-select filter groups.
 function CheckPill({ label, checked, onToggle }) {
   return (
     <label className={`inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded-full border cursor-pointer select-none ${
@@ -70,8 +73,6 @@ function CheckPill({ label, checked, onToggle }) {
   )
 }
 
-// Attendance rollup grouped by a profile attribute (designation / employment
-// type). Custom 'Other' entries are collapsed into a single 'Other' row.
 function AttributeTable({ title, rows, csvName }) {
   return (
     <div className="bg-white rounded-xl shadow-sm p-3">
@@ -134,12 +135,150 @@ function ChartCard({ title, csvName, csvRows, innerRef, children }) {
   )
 }
 
-// Department → employee matrix. Each department row expands (+) to reveal its
-// employees. Aggregates are summed from the employee rollups so it always
-// reflects the active filters.
-function Matrix({ rows }) {
-  const [open, setOpen] = useState({})
-  const toggle = (id) => setOpen((o) => ({ ...o, [id]: !o[id] }))
+// ── Drill-down panel (Phase 2) ───────────────────────────────────────────
+// One row showing a single attendance event with its metadata and (for camera
+// events with a saved crop) a clickable face-crop thumbnail.
+function EventRow({ event }) {
+  const badge = SOURCE_BADGE[event.source] || SOURCE_BADGE.camera
+  const time = fmtTime(event.event_time)
+  const direction = event.direction || 'seen'
+  const sim = event.similarity != null ? ` · match ${(event.similarity * 100).toFixed(0)}%` : ''
+  const review = event.review_status && event.review_status !== 'approved'
+    ? ` · ${event.review_status}`
+    : ''
+
+  return (
+    <li className="flex items-center gap-3 py-1.5 border-t border-slate-50">
+      {/* Thumbnail: camera events with a saved crop get a real image,
+          otherwise an icon placeholder. */}
+      <div className="flex-shrink-0 w-12 h-12">
+        {event.source === 'camera' && event.crop_path ? (
+          <AuthImage
+            src={api.eventCropUrl(event.id)}
+            alt={`Face at ${time}`}
+            className="w-12 h-12 rounded object-cover border border-slate-200"
+            fallback={
+              <div className="w-12 h-12 rounded bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-300 text-lg">
+                ⋯
+              </div>
+            }
+            zoomable
+          />
+        ) : (
+          <div className="w-12 h-12 rounded bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-300 text-xl"
+               title={event.source === 'camera' ? 'Crop not available' : 'No crop for non-camera events'}>
+            {badge.icon}
+          </div>
+        )}
+      </div>
+
+      {/* Details. */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm font-medium text-slate-800 tabular-nums">{time}</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${badge.color}`}>
+            {badge.icon} {badge.label}
+          </span>
+          <span className="text-xs text-slate-500">{direction}{sim}{review}</span>
+        </div>
+        <div className="text-[11px] text-slate-400 truncate">
+          {event.camera_label}
+          {event.source === 'field' && event.distance_m != null && (
+            <span> · {Math.round(event.distance_m)} m from station</span>
+          )}
+        </div>
+      </div>
+    </li>
+  )
+}
+
+// A single day card inside the drill-down.
+function DayCard({ day }) {
+  const events = day.events || []
+  return (
+    <div className="bg-white rounded-lg border border-slate-100 p-3">
+      <div className="flex items-center justify-between flex-wrap gap-y-1">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-slate-700">{fmtDayLabel(day.date)}</span>
+          <span className={`text-[10px] px-2 py-0.5 rounded-full ${statusClass(day.status)}`}>
+            {statusLabel(day.status)}
+          </span>
+          {day.adjusted && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-700"
+                  title={day.adjustment_reason || 'A supervisor correction was applied to this day'}>
+              Adjusted
+            </span>
+          )}
+          {day.has_anomaly && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-50 text-orange-700"
+                  title={day.anomalies.map((a) => a.message).join('\n')}>
+              ⚠ Review
+            </span>
+          )}
+        </div>
+        <span className="text-xs text-slate-500 tabular-nums">
+          {fmtHours(day.hours_in_office)} · {day.entry_count}↓/{day.exit_count}↑
+        </span>
+      </div>
+      {events.length > 0 ? (
+        <ul className="mt-1.5">
+          {events.map((e) => <EventRow key={e.id} event={e} />)}
+        </ul>
+      ) : (
+        <p className="text-xs text-slate-400 mt-2 italic">No events on this day.</p>
+      )}
+    </div>
+  )
+}
+
+// The drill-down block that appears inline under a clicked employee.
+// Loads the employee's day-by-day timeline for the current date range and
+// shows EVERY event — ignoring the capture-type filter on purpose.
+function EmployeeDrilldown({ externalId, name, from, to }) {
+  const [days, setDays] = useState(null)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    let active = true
+    setErr('')
+    setDays(null)
+    api.supervisorEmployeeSummary(externalId, from, to)
+      .then((d) => { if (active) setDays(d) })
+      .catch((e) => { if (active) setErr(e.message) })
+    return () => { active = false }
+  }, [externalId, from, to])
+
+  if (err) return <p className="text-xs text-red-600 p-3">{err}</p>
+  if (days === null) return <p className="text-xs text-slate-400 p-3">Loading timeline…</p>
+
+  // Hide weekends / upcoming days — only days with activity or absence noise
+  // are useful in a drill-down.
+  const visible = days.filter((d) => d.event_count > 0 || d.status === 'absent' || d.adjusted)
+
+  return (
+    <div className="bg-slate-50 p-3 border-t border-slate-200">
+      <div className="mb-2 text-[11px] text-slate-500">
+        Full timeline for <span className="font-medium text-slate-700">{name}</span>
+        {' '}· {from} to {to} · ignores the capture-type filter
+      </div>
+      {visible.length > 0 ? (
+        <div className="space-y-2">
+          {visible.map((d) => <DayCard key={d.date} day={d} />)}
+        </div>
+      ) : (
+        <p className="text-xs text-slate-400 italic">No activity in this period.</p>
+      )}
+    </div>
+  )
+}
+
+// Department → employee matrix. Each department row expands to show its
+// employees; each employee row expands further to show the full drill-down.
+function Matrix({ rows, from, to }) {
+  const [openDept, setOpenDept] = useState({})
+  const [openEmp, setOpenEmp] = useState({})
+  const toggleDept = (id) => setOpenDept((o) => ({ ...o, [id]: !o[id] }))
+  const toggleEmp = (ext) => setOpenEmp((o) => ({ ...o, [ext]: !o[ext] }))
   return (
     <div className="bg-white rounded-xl shadow-sm p-3">
       <h3 className="text-sm font-semibold text-slate-800 mb-2">Department matrix</h3>
@@ -156,29 +295,38 @@ function Matrix({ rows }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((d) => {
-              const isOpen = !!open[d.key]
-              return (
-                <FragmentRows key={d.key} d={d} isOpen={isOpen} toggle={() => toggle(d.key)} />
-              )
-            })}
+            {rows.map((d) => (
+              <FragmentRows
+                key={d.key}
+                d={d}
+                isDeptOpen={!!openDept[d.key]}
+                toggleDept={() => toggleDept(d.key)}
+                openEmp={openEmp}
+                toggleEmp={toggleEmp}
+                from={from}
+                to={to}
+              />
+            ))}
             {rows.length === 0 && (
               <tr><td colSpan={6} className="text-center text-slate-400 py-4">No data.</td></tr>
             )}
           </tbody>
         </table>
       </div>
+      <p className="text-[11px] text-slate-400 mt-2 text-center">
+        Click an employee to see their raw day-by-day timeline, with every event (camera, field, manual).
+      </p>
     </div>
   )
 }
 
-function FragmentRows({ d, isOpen, toggle }) {
+function FragmentRows({ d, isDeptOpen, toggleDept, openEmp, toggleEmp, from, to }) {
   return (
     <>
-      <tr className="border-t border-slate-100 bg-slate-50/60 cursor-pointer" onClick={toggle}>
+      <tr className="border-t border-slate-100 bg-slate-50/60 cursor-pointer" onClick={toggleDept}>
         <td className="px-2 py-1.5 font-medium text-slate-800">
           <span className="inline-flex items-center justify-center w-4 h-4 mr-1.5 rounded bg-brand-red text-white text-[11px] leading-none align-middle">
-            {isOpen ? '−' : '+'}
+            {isDeptOpen ? '−' : '+'}
           </span>
           {d.name}
         </td>
@@ -188,18 +336,55 @@ function FragmentRows({ d, isOpen, toggle }) {
         <td className="px-2 py-1.5 text-right text-slate-700">{d.attendance_pct}</td>
         <td className="px-2 py-1.5 text-right text-slate-700">{d.total_hours}</td>
       </tr>
-      {isOpen && d.employees.map((e) => (
-        <tr key={e.person_id ?? e.external_id} className="border-t border-slate-50">
-          <td className="px-2 py-1.5 pl-8 text-slate-600">
-            {e.display_name} <span className="text-slate-400">· {e.external_id}</span>
+      {isDeptOpen && d.employees.map((e) => {
+        const isEmpOpen = !!openEmp[e.external_id]
+        return (
+          <FragmentEmployee
+            key={e.person_id ?? e.external_id}
+            e={e}
+            isOpen={isEmpOpen}
+            onToggle={() => toggleEmp(e.external_id)}
+            from={from}
+            to={to}
+          />
+        )
+      })}
+    </>
+  )
+}
+
+function FragmentEmployee({ e, isOpen, onToggle, from, to }) {
+  return (
+    <>
+      <tr
+        className={`border-t border-slate-50 cursor-pointer hover:bg-slate-50 ${isOpen ? 'bg-slate-50' : ''}`}
+        onClick={onToggle}
+        title="Click to see the full timeline"
+      >
+        <td className="px-2 py-1.5 pl-8 text-slate-600">
+          <span className="inline-block w-3 text-slate-400 mr-1 text-[10px]">
+            {isOpen ? '▾' : '▸'}
+          </span>
+          {e.display_name} <span className="text-slate-400">· {e.external_id}</span>
+        </td>
+        <td className="px-2 py-1.5 text-right text-slate-400">—</td>
+        <td className="px-2 py-1.5 text-right text-slate-600">{e.present}</td>
+        <td className="px-2 py-1.5 text-right text-slate-600">{e.absent}</td>
+        <td className="px-2 py-1.5 text-right text-slate-600">{e.attendance_pct}</td>
+        <td className="px-2 py-1.5 text-right text-slate-600">{e.total_hours}</td>
+      </tr>
+      {isOpen && (
+        <tr className="border-t border-slate-100">
+          <td colSpan={6} className="p-0">
+            <EmployeeDrilldown
+              externalId={e.external_id}
+              name={e.display_name}
+              from={from}
+              to={to}
+            />
           </td>
-          <td className="px-2 py-1.5 text-right text-slate-400">—</td>
-          <td className="px-2 py-1.5 text-right text-slate-600">{e.present}</td>
-          <td className="px-2 py-1.5 text-right text-slate-600">{e.absent}</td>
-          <td className="px-2 py-1.5 text-right text-slate-600">{e.attendance_pct}</td>
-          <td className="px-2 py-1.5 text-right text-slate-600">{e.total_hours}</td>
         </tr>
-      ))}
+      )}
     </>
   )
 }
@@ -211,9 +396,8 @@ export default function Analytics({ back = '/supervisor' }) {
   const [to, setTo] = useState(istToday())
   const [granularity, setGranularity] = useState('day')
   const [deptId, setDeptId] = useState('')
-  // ── NEW FILTERS ──
-  const [sources, setSources] = useState(ALL_SOURCES)             // all three by default
-  const [roles, setRoles] = useState(DEFAULT_ROLES)                // employee by default
+  const [sources, setSources] = useState(ALL_SOURCES)
+  const [roles, setRoles] = useState(DEFAULT_ROLES)
   const [depts, setDepts] = useState([])
 
   const [summary, setSummary] = useState(null)
@@ -229,8 +413,6 @@ export default function Analytics({ back = '/supervisor' }) {
   const chartRefs = useRef({})
   const setChartRef = (key) => (el) => { chartRefs.current[key] = el }
 
-  // Serialize filters for the API. Empty -> undefined so the backend's
-  // defaults apply (which also means "all" in both cases).
   const sourcesParam = sources.length === ALL_SOURCES.length ? undefined : sources.join(',')
   const rolesParam = roles.length ? roles.join(',') : undefined
 
@@ -259,17 +441,12 @@ export default function Analytics({ back = '/supervisor' }) {
 
   useEffect(() => { load() }, [load])
 
-  // Checkbox toggle for Capture type.
-  // If the user unchecks everything, auto-revert to all three checked
-  // (the sensible default — an empty filter would show all zeroes).
   function toggleSource(v) {
     setSources((cur) => {
       const next = cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v]
       return next.length === 0 ? ALL_SOURCES.slice() : next
     })
   }
-
-  // Same auto-revert behaviour for Role.
   function toggleRole(v) {
     setRoles((cur) => {
       const next = cur.includes(v) ? cur.filter((x) => x !== v) : [...cur, v]
@@ -287,7 +464,6 @@ export default function Analytics({ back = '/supervisor' }) {
     [split],
   )
 
-  // Group the employee rollups by department for the drill-down matrix.
   const matrix = useMemo(() => {
     const groups = new Map()
     for (const r of overview) {
@@ -316,7 +492,6 @@ export default function Analytics({ back = '/supervisor' }) {
   }, [overview])
 
   const deptName = deptId ? depts.find((d) => String(d.id) === String(deptId))?.name : null
-  // Build a readable subtitle that lists active filters.
   const filterBits = []
   if (sources.length < ALL_SOURCES.length) {
     filterBits.push(`capture: ${sources.map((s) => CAPTURE_TYPES.find(([v]) => v === s)[1]).join(', ')}`)
@@ -367,32 +542,21 @@ export default function Analytics({ back = '/supervisor' }) {
             </div>
           </div>
 
-          {/* NEW: Capture type (how the attendance was logged) */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-slate-500 w-20">Capture type</span>
             {CAPTURE_TYPES.map(([val, label]) => (
-              <CheckPill
-                key={val}
-                label={label}
-                checked={sources.includes(val)}
-                onToggle={() => toggleSource(val)}
-              />
+              <CheckPill key={val} label={label}
+                checked={sources.includes(val)} onToggle={() => toggleSource(val)} />
             ))}
           </div>
 
-          {/* NEW: Role (who the person is) */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-slate-500 w-20">Role</span>
             {ROLES.map(([val, label]) => (
-              <CheckPill
-                key={val}
-                label={label}
-                checked={roles.includes(val)}
-                onToggle={() => toggleRole(val)}
-              />
+              <CheckPill key={val} label={label}
+                checked={roles.includes(val)} onToggle={() => toggleRole(val)} />
             ))}
 
-            {/* Export all */}
             <div className="ml-auto flex gap-1">
               <button onClick={() => exportMatrixXls(matrix, 'analytics.xls', meta)}
                 className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-medium">Excel</button>
@@ -406,7 +570,6 @@ export default function Analytics({ back = '/supervisor' }) {
 
         {error && <p className="text-red-600 text-sm">{error}</p>}
 
-        {/* KPIs — react to every filter */}
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
           <Kpi label="Attendance %" value={summary ? `${summary.attendance_pct}%` : '–'} tone="text-sky-600" />
           <Kpi label="Present" value={summary?.present ?? '–'} tone="text-emerald-600" />
@@ -417,86 +580,86 @@ export default function Analytics({ back = '/supervisor' }) {
         </div>
 
         <div className="grid md:grid-cols-2 gap-4">
-            <ChartCard title="Attendance % trend" csvName="attendance_trend" csvRows={() => trend} innerRef={setChartRef('trend')}>
-              <ResponsiveContainer width="100%" height={260}>
-                <AreaChart data={trend} margin={{ top: 5, right: 10, left: -18, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-                  <XAxis dataKey="period" tick={{ fontSize: 11 }} />
-                  <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Area type="monotone" dataKey="attendance_pct" name="Attendance %" stroke="#0ea5e9" fill="#bae6fd" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </ChartCard>
+          <ChartCard title="Attendance % trend" csvName="attendance_trend" csvRows={() => trend} innerRef={setChartRef('trend')}>
+            <ResponsiveContainer width="100%" height={260}>
+              <AreaChart data={trend} margin={{ top: 5, right: 10, left: -18, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
+                <XAxis dataKey="period" tick={{ fontSize: 11 }} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
+                <Tooltip />
+                <Area type="monotone" dataKey="attendance_pct" name="Attendance %" stroke="#0ea5e9" fill="#bae6fd" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </ChartCard>
 
-            <ChartCard title="Present vs Absent" csvName="present_absent" csvRows={() => trend} innerRef={setChartRef('pa')}>
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={trend} margin={{ top: 5, right: 10, left: -18, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-                  <XAxis dataKey="period" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} />
-                  <Tooltip /><Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="present" name="Present" stackId="a" fill="#22c55e" />
-                  <Bar dataKey="absent" name="Absent" stackId="a" fill="#ef4444" />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartCard>
+          <ChartCard title="Present vs Absent" csvName="present_absent" csvRows={() => trend} innerRef={setChartRef('pa')}>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={trend} margin={{ top: 5, right: 10, left: -18, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
+                <XAxis dataKey="period" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip /><Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="present" name="Present" stackId="a" fill="#22c55e" />
+                <Bar dataKey="absent" name="Absent" stackId="a" fill="#ef4444" />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
 
-            <ChartCard title="Attendance % by department" csvName="by_department" csvRows={() => byDept} innerRef={setChartRef('dept')}>
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={byDept} margin={{ top: 5, right: 10, left: -18, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                  <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
-                  <Tooltip />
-                  <Bar dataKey="attendance_pct" name="Attendance %" fill="#6366f1" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartCard>
+          <ChartCard title="Attendance % by department" csvName="by_department" csvRows={() => byDept} innerRef={setChartRef('dept')}>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={byDept} margin={{ top: 5, right: 10, left: -18, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} />
+                <Tooltip />
+                <Bar dataKey="attendance_pct" name="Attendance %" fill="#6366f1" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
 
-            <ChartCard title="Camera vs Field vs Manual" csvName="source_split" csvRows={() => splitRows} innerRef={setChartRef('split')}>
-              <ResponsiveContainer width="100%" height={260}>
-                <PieChart>
-                  <Pie data={splitRows} dataKey="count" nameKey="source" cx="50%" cy="50%" outerRadius={90} label>
-                    {splitRows.map((r) => <Cell key={r.source} fill={PIE_COLORS[r.source] || '#94a3b8'} />)}
-                  </Pie>
-                  <Tooltip /><Legend wrapperStyle={{ fontSize: 12 }} />
-                </PieChart>
-              </ResponsiveContainer>
-            </ChartCard>
+          <ChartCard title="Camera vs Field vs Manual" csvName="source_split" csvRows={() => splitRows} innerRef={setChartRef('split')}>
+            <ResponsiveContainer width="100%" height={260}>
+              <PieChart>
+                <Pie data={splitRows} dataKey="count" nameKey="source" cx="50%" cy="50%" outerRadius={90} label>
+                  {splitRows.map((r) => <Cell key={r.source} fill={PIE_COLORS[r.source] || '#94a3b8'} />)}
+                </Pie>
+                <Tooltip /><Legend wrapperStyle={{ fontSize: 12 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </ChartCard>
 
-            <ChartCard title="Hours by employee (top 12)" csvName="hours_by_employee" csvRows={() => hoursByEmployee} innerRef={setChartRef('hours')}>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={hoursByEmployee} layout="vertical" margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-                  <XAxis type="number" tick={{ fontSize: 11 }} />
-                  <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 10 }} />
-                  <Tooltip />
-                  <Bar dataKey="hours" name="Hours" fill="#0ea5e9" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartCard>
+          <ChartCard title="Hours by employee (top 12)" csvName="hours_by_employee" csvRows={() => hoursByEmployee} innerRef={setChartRef('hours')}>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={hoursByEmployee} layout="vertical" margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
+                <XAxis type="number" tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Bar dataKey="hours" name="Hours" fill="#0ea5e9" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
 
-            <ChartCard title="Lowest attendance" csvName="lowest_attendance" csvRows={() => lowest} innerRef={setChartRef('low')}>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={lowest.map((r) => ({ name: r.display_name, pct: r.attendance_pct }))}
-                  layout="vertical" margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
-                  <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} />
-                  <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 10 }} />
-                  <Tooltip />
-                  <Bar dataKey="pct" name="Attendance %" fill="#f59e0b" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartCard>
-          </div>
+          <ChartCard title="Lowest attendance" csvName="lowest_attendance" csvRows={() => lowest} innerRef={setChartRef('low')}>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={lowest.map((r) => ({ name: r.display_name, pct: r.attendance_pct }))}
+                layout="vertical" margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#eef2f7" />
+                <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Bar dataKey="pct" name="Attendance %" fill="#f59e0b" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+        </div>
 
-          <Matrix rows={matrix} />
+        <Matrix rows={matrix} from={from} to={to} />
 
-          <div className="grid md:grid-cols-2 gap-4">
-            <AttributeTable title="By designation" rows={byDesignation} csvName="by_designation" />
-            <AttributeTable title="By employment type" rows={byEmployment} csvName="by_employment_type" />
-          </div>
+        <div className="grid md:grid-cols-2 gap-4">
+          <AttributeTable title="By designation" rows={byDesignation} csvName="by_designation" />
+          <AttributeTable title="By employment type" rows={byEmployment} csvName="by_employment_type" />
+        </div>
 
         <p className="text-[11px] text-slate-400 text-center pt-1">
           Capture type is how attendance was logged (camera / field / manual).

@@ -57,6 +57,8 @@ from app.schemas import (
     PersonRollup,
     SignupOut,
     SupervisorOut,
+    AttendanceEventOutAdmin,
+    DaySummaryAdmin,
 )
 from app.services import attendance_service as svc
 from app.services import corrections
@@ -175,7 +177,7 @@ def _compute_rollups(
     return rollups
 
 
-@router.get("/employee/{external_id}/summary", response_model=list[DaySummary])
+@router.get("/employee/{external_id}/summary", response_model=list[DaySummaryAdmin])
 def employee_summary(
     external_id: str,
     from_date: date | None = Query(default=None),
@@ -854,6 +856,37 @@ def field_selfie(
         raise HTTPException(status_code=404, detail="Selfie no longer available")
     return Response(content=data, media_type="image/jpeg")
 
+@router.get("/events/{event_id}/crop")
+def event_crop(
+    event_id: int,
+    current: Person = Depends(require_supervisor),
+    db: Session = Depends(get_db),
+):
+    """Serve the camera face crop for one event (dept-scoped).
+
+    The NUC writes crop files to the camera-audit Azure container as part of
+    normal attendance capture. This endpoint fetches one by its stored path.
+    Crops are periodically purged, so a 404 just means the crop is no longer
+    available — the UI shows a placeholder and carries on.
+    """
+    ev = db.get(AttendanceEvent, event_id)
+    if ev is None:
+        raise HTTPException(status_code=404, detail="Event not found")
+    # Only camera events have crops — refuse others cleanly.
+    if ev.source != "camera":
+        raise HTTPException(status_code=404, detail="This event has no crop image")
+    # Department-scope check (visitor events have no person_id; refuse them —
+    # visitor analytics gets its own crop endpoint in Phase 3).
+    if ev.person_id is None:
+        raise HTTPException(status_code=404, detail="Event not linked to an employee")
+    person = db.get(Person, ev.person_id)
+    _assert_same_department(current, person)
+    if not ev.crop_path:
+        raise HTTPException(status_code=404, detail="No crop saved for this event")
+    data = storage.load_camera_crop(ev.crop_path)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Crop no longer available")
+    return Response(content=data, media_type="image/jpeg")
 
 # ── Delegation to the Executive Assistant ────────────────────────────────────
 def _my_assistant(db: Session, supervisor: Person) -> Person:

@@ -17,6 +17,7 @@ AVATARS = "avatars"
 FIELD_SELFIES = "field_selfies"
 EMPLOYEE_PHOTOS = "employee_photos"
 SIGNAGE_MEDIA = "signage_media"
+CAMERA_AUDIT = "camera-audit"
 
 
 def using_blob() -> bool:
@@ -115,3 +116,40 @@ def delete(ref: str | None) -> None:
         os.remove(ref)
     except OSError:
         pass
+
+def load_camera_crop(crop_path: str | None) -> bytes | None:
+    """Return the bytes of a face crop from the camera-audit container.
+
+    `crop_path` is the raw path the NUC stored (e.g.
+    "gate-2/crops/2026-11-02/gate-in-2/abc_full.jpg") — NOT the "blob:…" form
+    other files use, because the NUC writes the path directly and doesn't know
+    this backend's naming conventions.
+
+    Returns None when the path is empty, the container isn't configured, or
+    the blob doesn't exist (purged, bad path, container not reachable).
+    Callers answer a 404 on None so the UI falls back gracefully.
+    """
+    if not crop_path:
+        return None
+    if not using_blob():
+        # In dev/tests with no Azure connection, try a local fallback under a
+        # 'camera_audit_dir' if configured; else just return None.
+        local_dir = getattr(settings, "camera_audit_dir", None)
+        if not local_dir:
+            return None
+        local_path = os.path.join(local_dir, crop_path)
+        try:
+            with open(local_path, "rb") as fh:
+                return fh.read()
+        except OSError:
+            return None
+    from azure.core.exceptions import ResourceNotFoundError
+
+    try:
+        return _blob_client(CAMERA_AUDIT, crop_path).download_blob().readall()
+    except ResourceNotFoundError:
+        return None
+    except Exception:
+        # Any other Azure error -> treat as "not available" so the UI doesn't
+        # crash. Monitoring the Azure side catches real outages.
+        return None

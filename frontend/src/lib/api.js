@@ -382,6 +382,10 @@ export const api = {
   fieldSelfieUrl(eventId) {
     return `${BASE}/supervisor/field/selfie/${eventId}`
   },
+   // URL of a camera event's audit crop (served protected; use via AuthImage).
+  eventCropUrl(eventId) {
+    return `${BASE}/supervisor/events/${eventId}/crop`
+  },
 
   // ── Supervisor: employee settings/permissions ──
   async getEmployeeSettings(externalId) {
@@ -519,6 +523,12 @@ export const api = {
     return handle(
       await fetch(`${BASE}/supervisor/employee/${externalId}/summary${q}`, { headers: authHeaders() })
     )
+  },
+    // Phase 2 alias used by Analytics.jsx's drill-down. Same endpoint as
+  // employeeSummary() — the extra name just makes the Analytics code read
+  // nicely alongside the other supervisor* methods there.
+  async supervisorEmployeeSummary(externalId, fromDate, toDate) {
+    return this.employeeSummary(externalId, fromDate, toDate)
   },
 
   // ── Disputes (employee) ──

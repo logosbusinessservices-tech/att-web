@@ -75,6 +75,15 @@ class AttendanceEventOut(BaseModel):
     class Config:
         from_attributes = True
 
+class AttendanceEventOutAdmin(AttendanceEventOut):
+    """Supervisor-scoped variant that also exposes the internal crop_path.
+
+    Used only by supervisor endpoints (department matrix drill-down). The
+    employee-facing endpoints keep the plain AttendanceEventOut so an
+    employee never sees the internal storage path of a crop file.
+    """
+    crop_path: str | None = None
+
 
 # ── Day summary / stats (Phase 1 aggregation) ────────────────────────────────
 class AnomalyOut(BaseModel):
@@ -101,7 +110,10 @@ class DaySummary(BaseModel):
     has_anomaly: bool = False
     anomalies: list[AnomalyOut] = []
 
-
+class DaySummaryAdmin(DaySummary):
+    """Supervisor-scoped DaySummary: events include the internal `crop_path`."""
+    events: list[AttendanceEventOutAdmin] = []
+    
 class PersonDaySummary(DaySummary):
     """A day summary tagged with the person (for supervisor views)."""
     person_id: int
