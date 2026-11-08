@@ -64,7 +64,7 @@ from app.services import attendance_service as svc
 from app.services import corrections
 from app.services import enrollment as enroll_service
 from app.services import notifications as notifications_service
-from app.services.report import build_overview_workbook
+from app.services.report import build_matrix_workbook, build_overview_workbook
 
 log = logging.getLogger(__name__)
 
@@ -228,6 +228,81 @@ def export_overview(
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
 
+@router.get("/attendance/matrix-export")
+def export_matrix(
+    from_date: date | None = Query(default=None),
+    to_date: date | None = Query(default=None),
+    department_id: int | None = Query(default=None),
+    roles: str | None = Query(default=None),
+    sources: str | None = Query(default=None),
+    types: str | None = Query(default=None),       # legacy
+    current: Person = Depends(require_supervisor),
+    db: Session = Depends(get_db),
+):
+    """Download the department -> employee MATRIX as a two-sheet .xlsx.
+
+    Mirrors the Analytics page filters: date range, department (chief only),
+    roles, capture types. The exported file is self-documenting — the active
+    filters appear as a subtitle on the first sheet.
+    """
+    if from_date is None or to_date is None:
+        from_date, to_date = _default_month()
+    department_id = _dept_scope(current, department_id)
+    roles_resolved = _mgmt_roles(current, roles, types)
+
+    rollups = _compute_rollups(
+        db, from_date, to_date, department_id,
+        types=types, roles=roles_resolved, sources=sources,
+    )
+
+    # Group the flat rollups by department — the same shape the frontend
+    # builds for the on-screen matrix, so the Excel view matches the web view.
+    from collections import defaultdict
+    dept_groups: dict = defaultdict(lambda: {
+        "name": "—", "headcount": 0, "present": 0, "absent": 0,
+        "total_hours": 0.0, "employees": [],
+    })
+    for r in rollups:
+        key = r.department_id if r.department_id is not None else "none"
+        g = dept_groups[key]
+        g["name"] = r.department_name or "—"
+        g["headcount"] += 1
+        g["present"] += r.present or 0
+        g["absent"] += r.absent or 0
+        g["total_hours"] += r.total_hours or 0.0
+        g["employees"].append(r)
+    # Compute attendance_pct per department and sort by name.
+    matrix = []
+    for g in dept_groups.values():
+        occurred = g["present"] + g["absent"]
+        g["attendance_pct"] = round(100.0 * g["present"] / occurred, 1) if occurred else 0.0
+        g["total_hours"] = round(g["total_hours"], 2)
+        matrix.append(g)
+    matrix.sort(key=lambda d: d["name"] or "")
+
+    # Pretty filter labels for the subtitle. Empty list -> no subtitle bit.
+    def _split(s: str | None) -> list[str] | None:
+        if not s:
+            return None
+        return [x.strip() for x in s.split(",") if x.strip()] or None
+
+    dept_name = None
+    if department_id is not None:
+        dept = db.get(Department, department_id)
+        dept_name = dept.name if dept else None
+
+    stream = build_matrix_workbook(
+        matrix, from_date, to_date,
+        dept_name=dept_name,
+        roles=_split(roles_resolved),
+        sources=_split(sources),
+    )
+    fname = f"attendance_matrix_{from_date}_{to_date}.xlsx"
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 # ── Disputes & overrides (Phase 2) ───────────────────────────────────────
 def _assert_same_department(supervisor: Person, employee: Person) -> None:

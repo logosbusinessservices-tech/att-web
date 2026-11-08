@@ -632,6 +632,33 @@ export const api = {
     }))
   },
 
+    // Downloads the department -> employee MATRIX as a real .xlsx (not the old
+  // HTML-pretending-to-be-xls). Respects the Analytics page filters so the
+  // export matches what the user sees.
+  async exportMatrix(fromDate, toDate, departmentId, opts) {
+    const f = this._normFilters(opts)
+    const p = new URLSearchParams()
+    if (fromDate && toDate) { p.set('from_date', fromDate); p.set('to_date', toDate) }
+    if (departmentId) p.set('department_id', departmentId)
+    if (f.roles) p.set('roles', f.roles)
+    if (f.sources) p.set('sources', f.sources)
+    if (f.types) p.set('types', f.types)
+    const q = p.toString() ? `?${p}` : ''
+    const res = await fetch(`${BASE}/supervisor/attendance/matrix-export${q}`, {
+      headers: authHeaders(),
+    })
+    if (!res.ok) throw new Error('Export failed')
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `attendance_matrix_${fromDate ?? ''}_${toDate ?? ''}.xlsx`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
+
   // Triggers a browser download of the Excel report.
   async exportOverview(fromDate, toDate, departmentId) {
     const p = new URLSearchParams()

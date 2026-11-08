@@ -51,6 +51,7 @@ def build_overview_workbook(rollups, from_date: date, to_date: date, dept_name=N
     stream.seek(0)
     return stream
 
+
 def build_matrix_workbook(
     matrix: list[dict],
     from_date: date,

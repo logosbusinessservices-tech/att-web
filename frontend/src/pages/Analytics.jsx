@@ -8,7 +8,7 @@ import AuthImage from '../components/AuthImage.jsx'
 import { api } from '../lib/api.js'
 import { useAuth } from '../lib/auth.jsx'
 import { fmtDayLabel, fmtHours, fmtTime, statusClass, statusLabel } from '../lib/format.js'
-import { downloadCsv, exportChartPng, exportDashboardPdf, exportDashboardPptx, exportMatrixXls } from '../lib/exporters.js'
+import { downloadCsv, exportChartPng, exportDashboardPdf, exportDashboardPptx } from '../lib/exporters.js'
 
 function istToday() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date())
@@ -274,14 +274,40 @@ function EmployeeDrilldown({ externalId, name, from, to }) {
 
 // Department → employee matrix. Each department row expands to show its
 // employees; each employee row expands further to show the full drill-down.
-function Matrix({ rows, from, to }) {
+function Matrix({ rows, from, to, deptId, roles, sources }) {
   const [openDept, setOpenDept] = useState({})
   const [openEmp, setOpenEmp] = useState({})
+  const [exporting, setExporting] = useState(false)
+  const [exportErr, setExportErr] = useState('')
   const toggleDept = (id) => setOpenDept((o) => ({ ...o, [id]: !o[id] }))
   const toggleEmp = (ext) => setOpenEmp((o) => ({ ...o, [ext]: !o[ext] }))
+
+  async function onExport() {
+    setExporting(true)
+    setExportErr('')
+    try {
+      await api.exportMatrix(from, to, deptId || undefined, { roles, sources })
+    } catch (e) {
+      setExportErr(e.message || 'Export failed')
+    } finally {
+      setExporting(false)
+    }
+  }
+  
   return (
     <div className="bg-white rounded-xl shadow-sm p-3">
-      <h3 className="text-sm font-semibold text-slate-800 mb-2">Department matrix</h3>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-sm font-semibold text-slate-800">Department matrix</h3>
+        <button
+          onClick={onExport}
+          disabled={exporting}
+          className="text-[11px] px-2 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+          title="Download as Excel (.xlsx) — matches current filters"
+        >
+          {exporting ? 'Exporting…' : '⬇ Export matrix'}
+        </button>
+      </div>
+      {exportErr && <p className="text-[11px] text-red-600 mb-2">{exportErr}</p>}
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="bg-slate-100 text-slate-600">
@@ -680,13 +706,13 @@ export default function Analytics({ back = '/supervisor' }) {
                 checked={roles.includes(val)} onToggle={() => toggleRole(val)} />
             ))}
 
-            <div className="ml-auto flex gap-1">
-              <button onClick={() => exportMatrixXls(matrix, 'analytics.xls', meta)}
-                className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white font-medium">Excel</button>
+                        <div className="ml-auto flex gap-1">
               <button onClick={() => exportDashboardPdf(collectCharts(), 'analytics.pdf', meta)}
-                className="text-xs px-3 py-1.5 rounded-lg bg-brand-red text-white font-medium">PDF</button>
+                className="text-xs px-3 py-1.5 rounded-lg bg-brand-red text-white font-medium"
+                title="Export all charts as PDF">PDF</button>
               <button onClick={() => exportDashboardPptx(collectCharts(), 'analytics.pptx', meta)}
-                className="text-xs px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium">PPT</button>
+                className="text-xs px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium"
+                title="Export all charts as PowerPoint">PPT</button>
             </div>
           </div>
         </div>
@@ -786,7 +812,8 @@ export default function Analytics({ back = '/supervisor' }) {
           </ChartCard>
         </div>
 
-        <Matrix rows={matrix} from={from} to={to} />
+               <Matrix rows={matrix} from={from} to={to}
+                deptId={deptId} roles={rolesParam} sources={sourcesParam} />
 
         {isChief && <VisitorMatrix from={from} to={to} />}
 
@@ -795,10 +822,10 @@ export default function Analytics({ back = '/supervisor' }) {
           <AttributeTable title="By employment type" rows={byEmployment} csvName="by_employment_type" />
         </div>
 
-        <p className="text-[11px] text-slate-400 text-center pt-1">
+                <p className="text-[11px] text-slate-400 text-center pt-1">
           Capture type is how attendance was logged (camera / field / manual).
           Role is who the person is. Both default to showing everything.
-          Export the charts (PDF / PPT), each visual (CSV / PNG), or the department matrix (Excel).
+          Export the charts (PDF / PPT), each visual (CSV / PNG), or the matrix (Export matrix button above).
         </p>
       </main>
     </div>
