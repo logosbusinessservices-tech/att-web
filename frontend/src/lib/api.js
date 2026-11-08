@@ -363,6 +363,10 @@ export const api = {
     )
   },
 
+   async fieldStatus() {
+    return null
+  },
+
   // ── Supervisor: field approvals ──
   async fieldApprovals(status = 'pending') {
     return handle(await fetch(`${BASE}/supervisor/field/approvals?status=${status}`, { headers: authHeaders() }))
