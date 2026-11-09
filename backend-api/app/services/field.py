@@ -46,6 +46,43 @@ def _save_selfie(person_external_id: str, image: bytes) -> str:
     fname = f"{person_external_id}_{datetime.now(timezone.utc):%Y%m%dT%H%M%S}_{uuid.uuid4().hex[:8]}.jpg"
     return storage.save(storage.FIELD_SELFIES, fname, image)
 
+def _describe_last_event(ev: AttendanceEvent) -> str:
+    """Human-friendly 'when + where' label for a check-in error message.
+
+    Examples:
+      'at 9:03 AM via the entry gate camera'
+      'at 2:15 PM via a field scan'
+      'at 10:00 AM via a supervisor adjustment'
+    """
+    when = svc._fmt_ist(ev.event_time)
+    if ev.source == "camera":
+        label = (ev.camera_label or "").lower()
+        if "in" in label:
+            where = "the entry gate camera"
+        elif "out" in label:
+            where = "the exit gate camera"
+        else:
+            where = "the gate camera"
+    elif ev.source == "field":
+        where = "a field scan"
+    elif ev.source == "manual":
+        where = "a supervisor adjustment"
+    else:
+        where = f"a {ev.source} event"
+    return f"at {when} via {where}"
+
+
+def _last_event_today(db: Session, person: Person, direction: str) -> AttendanceEvent | None:
+    """Return the most recent event today in the given direction (entry/exit)."""
+    today = svc.today_local()
+    events = db.execute(
+        select(AttendanceEvent).where(AttendanceEvent.person_id == person.id)
+    ).scalars().all()
+    day = [e for e in svc._effective_events(events)
+           if svc._to_local(e.event_time).date() == today
+           and e.direction == direction]
+    day.sort(key=lambda e: e.event_time, reverse=True)
+    return day[0] if day else None
 
 def open_entry_today(db: Session, person: Person) -> bool:
     """True if the person currently has an unclosed entry today (checked in)."""
@@ -91,9 +128,17 @@ def check_in(
     # can't check in twice in a row.
     inside = open_entry_today(db, person)
     if direction == "entry" and inside:
+        last_entry = _last_event_today(db, person, "entry")
+        if last_entry is not None:
+            detail = _describe_last_event(last_entry)
+            raise FieldError(
+                f"You were already checked in {detail}. "
+                "Tap 'Check out' when you're ready to leave."
+            )
+        # Fallback (shouldn't happen — `inside` is true only if there's an entry)
         raise FieldError("You're already checked in. Please check out first.")
     if direction == "exit" and not inside:
-        raise FieldError("You're not checked in yet. Please check in first.")
+        raise FieldError("You haven't checked in yet today. Please check in before checking out.")
 
     # 1) Identity — 1:1 against the person's own enrolled template.
     blob = _enrolled_blob(db, person.id)
