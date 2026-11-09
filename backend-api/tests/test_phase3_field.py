@@ -243,3 +243,151 @@ def test_field_captured_at_used_for_event_time(client, emp_headers, db_session, 
     emp = db_session.query(Person).filter_by(external_id="EMP001").one()
     ev = db_session.query(AttendanceEvent).filter_by(person_id=emp.id, source="field").first()
     assert ev.event_time.hour == 4
+
+# ──────────────────────────────────────────────────────────────────────────
+# Phase 5: friendlier "already checked in" error includes when + where
+# ──────────────────────────────────────────────────────────────────────────
+
+def test_already_checked_in_error_mentions_time_and_source(
+    client, emp_headers, db_session, match_face
+):
+    """The second entry attempt should get an error naming the TIME and SOURCE
+    of the first entry — not the terse old wording."""
+    _seed_embedding(db_session)
+    _enable_field(db_session)
+    _post_field(client, emp_headers, direction="entry")
+
+    r = _post_field(client, emp_headers, direction="entry")
+    assert r.status_code == 400
+    msg = r.json()["detail"]
+    assert "already checked in" in msg.lower()
+    # Should include an IST clock time like "9:03 AM".
+    assert any(tag in msg for tag in ("AM", "PM"))
+    # Should name the source — field scan in this case.
+    assert "field scan" in msg.lower()
+    # Should suggest the fix (check out).
+    assert "check out" in msg.lower()
+
+
+def test_already_checked_in_names_camera_when_entry_was_camera(
+    client, emp_headers, db_session, match_face
+):
+    """Simulate camera-then-field (the real-world race condition):
+    a camera entry already exists for today, then user tries to field-check-in.
+    The rejection message should say 'via the entry gate camera'."""
+    from datetime import datetime, timezone
+    from app.db.models import AttendanceEvent, Person
+
+    _seed_embedding(db_session)
+    _enable_field(db_session)
+    emp = db_session.query(Person).filter_by(external_id="EMP001").one()
+    # Fake a camera entry earlier today (naive UTC — the storage form).
+    db_session.add(AttendanceEvent(
+        person_id=emp.id, is_visitor=False,
+        camera_label="gate-in-1", direction="entry", source="camera",
+        event_time=datetime.now(timezone.utc).replace(tzinfo=None),
+    ))
+    db_session.commit()
+
+    r = _post_field(client, emp_headers, direction="entry")
+    assert r.status_code == 400
+    msg = r.json()["detail"]
+    assert "entry gate camera" in msg.lower()
+
+
+def test_cannot_exit_without_entry_wording(client, emp_headers, db_session, match_face):
+    """The 'check out when not checked in' error wording — no camera/field
+    name needed since there's nothing to reference."""
+    _seed_embedding(db_session)
+    _enable_field(db_session)
+    r = _post_field(client, emp_headers, direction="exit")
+    assert r.status_code == 400
+    msg = r.json()["detail"].lower()
+    assert "haven't checked in" in msg or "not checked in" in msg
+    assert "check in" in msg
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Phase 7: /attendance/field/status returns description fields
+# ──────────────────────────────────────────────────────────────────────────
+
+def test_field_status_descriptions_null_when_no_events(
+    client, emp_headers, db_session
+):
+    """Clean slate — no entries or exits today, both descriptions are None."""
+    _enable_field(db_session)
+    r = client.get("/attendance/field/status", headers=emp_headers).json()
+    assert r["last_entry_description"] is None
+    assert r["last_exit_description"] is None
+
+
+def test_field_status_describes_last_entry_after_checkin(
+    client, emp_headers, db_session, match_face
+):
+    """After an entry, the status endpoint returns a description with
+    time and source for the frontend to show on the 'already done' screen."""
+    _seed_embedding(db_session)
+    _enable_field(db_session)
+    _post_field(client, emp_headers, direction="entry")
+
+    r = client.get("/attendance/field/status", headers=emp_headers).json()
+    assert r["next_direction"] == "exit"
+    assert r["open_entry"] is True
+    assert r["last_entry_description"] is not None
+    assert "field scan" in r["last_entry_description"].lower()
+    assert any(tag in r["last_entry_description"] for tag in ("AM", "PM"))
+    # No exit yet today.
+    assert r["last_exit_description"] is None
+
+
+def test_field_status_describes_both_after_full_day(
+    client, emp_headers, db_session, match_face
+):
+    """After entry + exit in a day, both descriptions are populated."""
+    _seed_embedding(db_session)
+    _enable_field(db_session)
+    _post_field(client, emp_headers, direction="entry")
+    _post_field(client, emp_headers, direction="exit")
+
+    r = client.get("/attendance/field/status", headers=emp_headers).json()
+    # Last event is an exit, so next is entry again (would be a second cycle).
+    assert r["next_direction"] == "entry"
+    assert r["open_entry"] is False
+    assert r["last_entry_description"] is not None
+    assert r["last_exit_description"] is not None
+
+
+def test_field_status_camera_entry_shown_in_description(
+    client, emp_headers, db_session, match_face
+):
+    """A camera-source entry should be described as 'via the entry gate camera'
+    (matching the Phase 5 error wording, for consistency)."""
+    from datetime import datetime, timezone
+    from app.db.models import AttendanceEvent, Person
+
+    _enable_field(db_session)
+    emp = db_session.query(Person).filter_by(external_id="EMP001").one()
+    db_session.add(AttendanceEvent(
+        person_id=emp.id, is_visitor=False,
+        camera_label="gate-in-1", direction="entry", source="camera",
+        event_time=datetime.now(timezone.utc).replace(tzinfo=None),
+    ))
+    db_session.commit()
+
+    r = client.get("/attendance/field/status", headers=emp_headers).json()
+    assert r["open_entry"] is True
+    assert "entry gate camera" in r["last_entry_description"].lower()
+
+
+def test_field_status_still_includes_phase3_fields(
+    client, emp_headers, db_session, match_face
+):
+    """Make sure adding Phase 7 fields didn't accidentally remove the
+    Phase 3 ones (next_direction, open_entry) that the UI depends on."""
+    _seed_embedding(db_session)
+    _enable_field(db_session)
+    r = client.get("/attendance/field/status", headers=emp_headers).json()
+    assert "next_direction" in r
+    assert "open_entry" in r
+    assert "last_entry_description" in r
+    assert "last_exit_description" in r

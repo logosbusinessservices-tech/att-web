@@ -101,15 +101,17 @@ def field_status(
 ):
     """Tell the Field Attendance page whether the next scan is entry or exit.
 
-    Looks at the user's LAST attendance event today (any source — camera,
-    field, or manual) and flips the direction:
-      - last event was 'entry'  → next should be 'exit'
-      - last event was 'exit'   → next should be 'entry'
-      - no event today          → 'entry' (first scan of the day)
+    Returns four fields:
+      - next_direction: 'entry' or 'exit' — suggested button to highlight
+      - open_entry: True if the user has an unclosed entry today (checked in,
+        not yet checked out)
+      - last_entry_description / last_exit_description: friendly "when + where"
+        strings, or None if there's no such event today. Used by the two-button
+        screen to say "You were already checked in at 9:03 AM via the entry
+        gate camera" when the user taps a button for an action they've already
+        completed.
 
-    This includes camera events too, so if someone was already captured
-    walking into the office by the gate camera, their field app knows to
-    offer an exit rather than a duplicate entry.
+    Everything is scoped to the user's TODAY in IST.
     """
     today = svc.today_local()
     events = _load_events(db, current.id)
@@ -122,7 +124,17 @@ def field_status(
     else:
         next_direction = "exit"
 
+    # Find today's most recent entry and most recent exit separately. Either
+    # may be None (user hasn't done that action yet today).
+    last_entry = next((e for e in todays_events if e.direction == "entry"), None)
+    last_exit = next((e for e in todays_events if e.direction == "exit"), None)
+
+    # Reuse the Phase 5 describer so the message wording is consistent with
+    # the backend error messages.
+    from app.services.field import _describe_last_event
     return {
         "next_direction": next_direction,
         "open_entry": last is not None and last.direction == "entry",
+        "last_entry_description": _describe_last_event(last_entry) if last_entry else None,
+        "last_exit_description": _describe_last_event(last_exit) if last_exit else None,
     }

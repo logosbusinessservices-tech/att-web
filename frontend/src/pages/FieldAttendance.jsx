@@ -42,9 +42,15 @@ export default function FieldAttendance({ back }) {
   const gpsRef = useRef(null)
   const directionRef = useRef('entry')
 
-  const [phase, setPhase] = useState(enabled ? 'loading' : 'blocked') // loading|scanning|submitting|done|error
+  const [phase, setPhase] = useState(enabled ? 'choose' : 'blocked')
   const [direction, setDirection] = useState('entry')
   const [hint, setHint] = useState('Loading face scanner…')
+  // Phase 7: status from backend tells us which actions are already done today.
+  const [fieldStatus, setFieldStatus] = useState(null)
+  // Phase 7: the friendly "at 9:03 AM via the entry gate camera" string to
+  // show on the "already done" screen. Set when the user taps a button for
+  // something they've already completed.
+  const [alreadyDoneMsg, setAlreadyDoneMsg] = useState('')
   const [error, setError] = useState('')
   const [result, setResult] = useState(null)
   const [gps, setGps] = useState(null) // { lat, lon, accuracy } | null
@@ -156,11 +162,21 @@ export default function FieldAttendance({ back }) {
     return () => window.removeEventListener('online', onOnline)
   }, [refreshPending, runSync])
 
+  useEffect(() => {
+    if (!enabled) return
+    let cancelled = false
+    api.fieldStatus()
+      .then((s) => { if (!cancelled) setFieldStatus(s) })
+      .catch(() => { /* leave both buttons enabled, as agreed */ })
+    return () => { cancelled = true }
+  }, [enabled])
+
   // Load model + fetch next direction, then start camera + liveness loop.
   // Depends only on [enabled, restartKey] so GPS/direction updates never tear the
   // camera down (that was the cause of the flicker / black-screen).
   useEffect(() => {
     if (!enabled) return
+    if (phase !== 'loading') return
     let cancelled = false
     capturedRef.current = false
     blinkArmed.current = false
@@ -169,12 +185,8 @@ export default function FieldAttendance({ back }) {
 
     async function start() {
       try {
-        const [landmarker, status] = await Promise.all([getFaceLandmarker(), api.fieldStatus().catch(() => null)])
+        const landmarker = await getFaceLandmarker()
         if (cancelled) return
-        if (status?.next_direction) {
-          directionRef.current = status.next_direction
-          setDirection(status.next_direction)
-        }
 
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return }
@@ -254,7 +266,7 @@ export default function FieldAttendance({ back }) {
     }
     start()
     return () => { cancelled = true; stopCamera() }
-  }, [enabled, restartKey, stopCamera])
+  }, [enabled, restartKey, stopCamera, phase])
 
   function reset() {
     capturedRef.current = false
@@ -266,6 +278,40 @@ export default function FieldAttendance({ back }) {
     setHint('Loading face scanner…')
     setPhase('loading')
     setRestartKey((k) => k + 1)  // re-arm the camera in place (no page reload)
+  }
+
+    // Phase 7: user tapped "Mark Entry Attendance" or "Mark Exit Attendance".
+  // Check against the backend status: if the action is NOT needed, show the
+  // "already done" screen; otherwise start the camera.
+  function onPickDirection(picked) {
+    // If backend status is loaded, check whether this action is already done.
+    if (fieldStatus) {
+      if (picked === 'entry' && fieldStatus.open_entry && fieldStatus.last_entry_description) {
+        setAlreadyDoneMsg(`You were already checked in ${fieldStatus.last_entry_description}.`)
+        setPhase('already_done')
+        return
+      }
+      if (picked === 'exit' && !fieldStatus.open_entry) {
+        if (fieldStatus.last_exit_description) {
+          setAlreadyDoneMsg(`You were already checked out ${fieldStatus.last_exit_description}.`)
+        } else {
+          setAlreadyDoneMsg("You haven't marked an entry yet today, so there's nothing to check out from.")
+        }
+        setPhase('already_done')
+        return
+      }
+    }
+    // Action is needed (or status failed to load) — start the camera.
+    directionRef.current = picked
+    setDirection(picked)
+    setHint('Loading face scanner…')
+    setPhase('loading')
+  }
+
+  // Phase 7: user tapped "OK" on the "already done" screen — go home.
+  function onAlreadyDoneAck() {
+    stopCamera()
+    navigate(back || home)
   }
 
   const title = `Field ${direction === 'exit' ? 'Check-out' : 'Check-in'}`
@@ -282,7 +328,69 @@ export default function FieldAttendance({ back }) {
           </div>
         )}
 
-        {phase !== 'blocked' && (
+                {phase === 'choose' && (
+          <div className="space-y-4 mt-4">
+            {(pending > 0 || syncMsg) && (
+              <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+                <span>
+                  {pending > 0
+                    ? `${pending} scan${pending === 1 ? '' : 's'} waiting to sync${navigator.onLine ? '' : ' (offline)'}`
+                    : syncMsg}
+                </span>
+                {pending > 0 && navigator.onLine && (
+                  <button onClick={runSync} className="underline font-medium">Sync now</button>
+                )}
+              </div>
+            )}
+
+            <div className="text-center text-white pt-4">
+              <h2 className="text-lg font-semibold">How are you marking your attendance?</h2>
+              <p className="text-xs text-slate-300 mt-1">
+                {gps ? `Location ±${Math.round(gps.accuracy)} m` : 'Locating…'}
+                {!navigator.onLine && ' · offline'}
+              </p>
+            </div>
+
+            <button
+              onClick={() => onPickDirection('entry')}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl py-6 text-lg font-semibold shadow-lg active:scale-[0.98] transition flex items-center justify-center gap-3"
+            >
+              <span className="text-2xl">📥</span>
+              Mark Entry Attendance
+            </button>
+
+            <button
+              onClick={() => onPickDirection('exit')}
+              className="w-full bg-sky-600 hover:bg-sky-700 text-white rounded-2xl py-6 text-lg font-semibold shadow-lg active:scale-[0.98] transition flex items-center justify-center gap-3"
+            >
+              <span className="text-2xl">📤</span>
+              Mark Exit Attendance
+            </button>
+
+            <p className="text-[11px] text-slate-400 text-center pt-2">
+              After you tap a button, your face will be scanned against your enrolled profile.
+            </p>
+          </div>
+        )}
+
+        {phase === 'already_done' && (
+          <div className="bg-white rounded-2xl p-6 text-center space-y-4 mt-6">
+            <div className="text-5xl">✓</div>
+            <p className="font-semibold text-slate-800">Already done</p>
+            <p className="text-sm text-slate-600">{alreadyDoneMsg}</p>
+            <p className="text-xs text-slate-400">
+              No need to scan again. If something doesn't look right, ask your supervisor.
+            </p>
+            <button
+              onClick={onAlreadyDoneAck}
+              className="w-full bg-slate-900 text-white rounded-lg py-3 font-medium"
+            >
+              OK, got it
+            </button>
+          </div>
+        )}
+
+                {phase !== 'blocked' && phase !== 'choose' && phase !== 'already_done' && (
           <div className="space-y-4">
             {(pending > 0 || syncMsg) && (
               <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
