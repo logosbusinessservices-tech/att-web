@@ -18,6 +18,7 @@ from app.schemas import AttendanceEventOut, AttendanceStats, DaySummary
 from app.services import attendance_service as svc
 from app.services import corrections
 
+
 router = APIRouter(prefix="/attendance", tags=["attendance"])
 
 
@@ -92,3 +93,36 @@ def my_attendance(
         .limit(limit)
     ).scalars().all()
     return rows
+
+@router.get("/field/status")
+def field_status(
+    current: Person = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Tell the Field Attendance page whether the next scan is entry or exit.
+
+    Looks at the user's LAST attendance event today (any source — camera,
+    field, or manual) and flips the direction:
+      - last event was 'entry'  → next should be 'exit'
+      - last event was 'exit'   → next should be 'entry'
+      - no event today          → 'entry' (first scan of the day)
+
+    This includes camera events too, so if someone was already captured
+    walking into the office by the gate camera, their field app knows to
+    offer an exit rather than a duplicate entry.
+    """
+    today = svc.today_local()
+    events = _load_events(db, current.id)
+    todays_events = [e for e in events if svc._to_local(e.event_time).date() == today]
+    todays_events.sort(key=lambda e: e.event_time, reverse=True)
+
+    last = todays_events[0] if todays_events else None
+    if last is None or last.direction == "exit":
+        next_direction = "entry"
+    else:
+        next_direction = "exit"
+
+    return {
+        "next_direction": next_direction,
+        "open_entry": last is not None and last.direction == "entry",
+    }

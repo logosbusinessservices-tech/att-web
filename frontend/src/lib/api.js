@@ -363,8 +363,14 @@ export const api = {
     )
   },
 
-   async fieldStatus() {
-    return null
+  // Asks the backend what the next field scan direction should be — "entry"
+  // or "exit" — based on the user's most recent event today (any source).
+  // Lets the Field Attendance page pre-fill the direction so users don't have
+  // to pick; also solves the race where they were already captured by camera.
+  async fieldStatus() {
+    return handle(
+      await fetch(`${BASE}/attendance/field/status`, { headers: authHeaders() })
+    )
   },
 
   // ── Supervisor: field approvals ──

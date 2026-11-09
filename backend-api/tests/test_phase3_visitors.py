@@ -142,7 +142,8 @@ def test_visitor_summary_handles_null_direction(client, chief_headers, db_sessio
 # ── By-day: grouped structure, totals per day, raw events inside ────────────
 def test_visitor_by_day_groups_by_day(client, chief_headers, db_session):
     d1 = _recent_working_day(1)
-    d2 = _recent_working_day(2)
+    d2 = _recent_working_day(4)  # bigger gap so Sunday-skipping never collapses the two
+    assert d1 != d2, "test helper collapsed two offsets to the same day"
     _add_visitor(db_session, d1, 9, 0, direction="entry")
     _add_visitor(db_session, d1, 10, 0, direction="entry")
     _add_visitor(db_session, d2, 11, 0, direction="exit")
