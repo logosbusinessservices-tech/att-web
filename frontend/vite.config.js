@@ -10,8 +10,11 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+       injectRegister: false,  // we register manually in main.jsx so we can control the reload behaviour
       includeAssets: ['favicon.svg'],
       workbox: {
+        skipWaiting: true,
+        clientsClaim: true,
         // The MediaPipe WASM/model are large; don't precache them. Instead cache
         // on first use (CacheFirst) so liveness works offline after one online run.
         globIgnores: ['**/mediapipe/**'],
