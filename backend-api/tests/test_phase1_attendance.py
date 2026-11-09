@@ -160,3 +160,97 @@ def test_supervisor_export_returns_xlsx(client, sup_headers):
 
 def test_supervisor_overview_blocks_employee(client, emp_headers):
     assert client.get("/supervisor/attendance/overview", headers=emp_headers).status_code == 403
+
+# ── Phase 6: dedup of rapid-fire duplicate events ──────────────────────────
+from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+from app.config import settings
+from app.db.models import AttendanceEvent, Person
+from app.services import attendance_service as svc
+
+
+_IST_TZ = ZoneInfo(settings.display_timezone)
+
+
+def _naive_utc_from_ist(d: date, hh: int, mm: int, ss: int = 0) -> datetime:
+    """IST wall-clock -> naive UTC (the storage form the pipeline uses)."""
+    local = datetime.combine(d, time(hh, mm, ss), tzinfo=_IST_TZ)
+    return local.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _make_event(person_id, d, hh, mm, ss=0, *, direction="entry", source="camera",
+                camera_label="gate-in-1"):
+    """Phase 6 test helper — named differently to avoid collision with _ev."""
+    return AttendanceEvent(
+        person_id=person_id, is_visitor=False,
+        camera_label=camera_label, direction=direction, source=source,
+        event_time=_naive_utc_from_ist(d, hh, mm, ss),
+    )
+
+
+def test_dedup_collapses_rapid_camera_entries():
+    """The classic 11:40/11:41/11:43 case from Julia's analytics dashboard."""
+    today = svc.today_local()
+    events = [
+        _make_event(1, today, 11, 40, 0),
+        _make_event(1, today, 11, 41, 0),  # within 2 min of 11:40 -> dropped
+        _make_event(1, today, 11, 43, 0),  # 3 min after 11:40 -> kept as separate
+    ]
+    out = svc._dedup_consecutive(events)
+    assert len(out) == 2
+    assert svc._to_local(out[0].event_time).minute == 40
+    assert svc._to_local(out[1].event_time).minute == 43
+
+
+def test_dedup_keeps_earliest_in_burst():
+    """Earliest-wins: when three events land within seconds, keep the first."""
+    today = svc.today_local()
+    events = [
+        _make_event(1, today, 9, 0, 10),
+        _make_event(1, today, 9, 0, 30),
+        _make_event(1, today, 9, 1, 15),  # all within 2 min of 9:00:10
+    ]
+    out = svc._dedup_consecutive(events)
+    assert len(out) == 1
+    assert svc._to_local(out[0].event_time).second == 10
+
+
+def test_dedup_does_not_cross_sources():
+    """Camera + field at close times stay as separate events (different sources)."""
+    today = svc.today_local()
+    events = [
+        _make_event(1, today, 9, 3, source="camera"),
+        _make_event(1, today, 9, 4, source="field"),  # 1 min later, different source -> KEEP
+    ]
+    out = svc._dedup_consecutive(events)
+    assert len(out) == 2
+
+
+def test_dedup_does_not_cross_directions():
+    """Entry + exit at close times stay separate (opposite directions)."""
+    today = svc.today_local()
+    events = [
+        _make_event(1, today, 9, 0, direction="entry"),
+        _make_event(1, today, 9, 1, direction="exit", camera_label="gate-out-1"),
+    ]
+    out = svc._dedup_consecutive(events)
+    assert len(out) == 2
+
+
+def test_dedup_handles_empty():
+    """Defensive: no events in, no events out, no crash."""
+    assert svc._dedup_consecutive([]) == []
+
+
+def test_dedup_leaves_well_spaced_events_alone():
+    """Normal day with entries and exits hours apart — nothing should be dropped."""
+    today = svc.today_local()
+    events = [
+        _make_event(1, today, 9, 0, direction="entry"),
+        _make_event(1, today, 13, 0, direction="exit", camera_label="gate-out-1"),
+        _make_event(1, today, 14, 0, direction="entry"),
+        _make_event(1, today, 18, 0, direction="exit", camera_label="gate-out-1"),
+    ]
+    out = svc._dedup_consecutive(events)
+    assert len(out) == 4

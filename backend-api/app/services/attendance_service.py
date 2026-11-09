@@ -23,6 +23,7 @@ from app.db.models import AttendanceEvent
 
 _TZ = ZoneInfo(settings.display_timezone)
 _WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+_DEDUP_WINDOW_SECONDS = 120
 
 
 def _to_local(dt: datetime) -> datetime:
@@ -90,6 +91,39 @@ def _compute_hours(events_sorted: list[AttendanceEvent]) -> float:
     return round(total.total_seconds() / 3600.0, 2)
 
 
+def _dedup_consecutive(events: list[AttendanceEvent]) -> list[AttendanceEvent]:
+    """Collapse rapid-fire duplicates from the same source into one event.
+
+    Two events are considered the same physical crossing when ALL of these match:
+      - same person (implicit — callers already pass one person's events)
+      - same direction (entry|exit)
+      - same source  (camera|field|manual)
+      - within _DEDUP_WINDOW_SECONDS of the previous kept event
+
+    Keeps the EARLIEST one (earliest-wins), drops the rest. Events in
+    different sources are NEVER merged — a camera entry at 9:03 and a
+    field entry at 9:04 stay as two events (one per source), because the
+    camera is the physical truth and the field scan adds no new info.
+    """
+    if not events:
+        return events
+    ordered = sorted(events, key=lambda e: e.event_time)
+    kept: list[AttendanceEvent] = []
+    # Remember the latest kept event for each (direction, source) pair, so a
+    # third fast-following duplicate is measured from the first kept one, not
+    # from the one we just dropped. That's what "burst" dedup requires.
+    last_kept: dict[tuple[str | None, str | None], datetime] = {}
+    for e in ordered:
+        key = (e.direction, e.source)
+        anchor = last_kept.get(key)
+        if anchor is not None:
+            gap = (e.event_time - anchor).total_seconds()
+            if gap < _DEDUP_WINDOW_SECONDS:
+                continue  # duplicate burst — skip
+        kept.append(e)
+        last_kept[key] = e.event_time
+    return kept
+
 def _effective_events(events: list[AttendanceEvent]) -> list[AttendanceEvent]:
     """Apply append-only supervisor corrections.
 
@@ -120,7 +154,7 @@ def _effective_events(events: list[AttendanceEvent]) -> list[AttendanceEvent]:
         if rid is not None and latest_repl.get(rid) is not e:
             continue  # a stale (older) correction of the same crossing
         kept.append(e)
-    return kept
+    return _dedup_consecutive(kept)
 
 
 def detect_anomalies(events_sorted: list[AttendanceEvent]) -> list[dict]:
