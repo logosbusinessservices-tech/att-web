@@ -32,6 +32,7 @@ export default function FieldAttendance({ back }) {
   const rafRef = useRef(0)
   const streamRef = useRef(null)
   const capturedRef = useRef(false)  // guard against double-capture
+  const phaseRef = useRef('choose')
 
   // Liveness loop bookkeeping (refs so the camera effect never re-runs on change).
   const blinkArmed = useRef(false)   // saw eyes-open, waiting for a blink
@@ -134,6 +135,9 @@ export default function FieldAttendance({ back }) {
     canvas.toBlob((blob) => { if (blob) submit(blob) }, 'image/jpeg', 0.9)
   }, [stopCamera, submit])
 
+    // Keep the phase ref in sync so refs-based reads elsewhere stay current.
+  useEffect(() => { phaseRef.current = phase }, [phase])
+
   // Keep the latest capture closure reachable from the (stable) detection loop.
   const captureRef = useRef(capture)
   useEffect(() => { captureRef.current = capture }, [capture])
@@ -176,7 +180,7 @@ export default function FieldAttendance({ back }) {
   // camera down (that was the cause of the flicker / black-screen).
   useEffect(() => {
     if (!enabled) return
-    if (phase !== 'loading') return
+    if (phaseRef.current !== 'loading') return
     let cancelled = false
     capturedRef.current = false
     blinkArmed.current = false
@@ -266,7 +270,7 @@ export default function FieldAttendance({ back }) {
     }
     start()
     return () => { cancelled = true; stopCamera() }
-  }, [enabled, restartKey, stopCamera, phase])
+  }, [enabled, restartKey, stopCamera])
 
   function reset() {
     capturedRef.current = false
