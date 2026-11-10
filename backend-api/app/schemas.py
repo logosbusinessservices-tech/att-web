@@ -402,6 +402,12 @@ class ReEnrollmentResult(BaseModel):
     photos_used: int
     notes: list[str] = []  # any skipped photos (too blurry, no face, etc.)
 
+class PasswordResetResult(BaseModel):
+    """Response when EA001 super-admin resets an account's password to its default."""
+    external_id: str
+    display_name: str
+    default_password: str  # the new password (= employee code); EA tells the user
+
 # ── Supervisor notifications ─────────────────────────────────────────────────
 class NotificationOut(BaseModel):
     type: str                        # password_reminder | camera_error

@@ -444,6 +444,14 @@ export const api = {
   async eaRefOptions() {
     return handle(await fetch(`${BASE}/assistant/ref-options`, { headers: authHeaders() }))
   },
+    // Phase 10: EA001 super-admin only — reset an account's password to its
+  // default (the employee code). Returns { external_id, display_name, default_password }.
+  async eaResetPassword(externalId) {
+    return handle(await fetch(
+      `${BASE}/assistant/accounts/${encodeURIComponent(externalId)}/reset-password`,
+      { method: 'POST', headers: authHeaders() }
+    ))
+  },
 
   // ── EA: gate-monitor announcements ──
   async displayMessages() {

@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app import storage
 from app.auth.deps import require_assistant
+from app.auth.security import hash_password
 from app.db.database import get_db
 from app.db.models import (
     AttendanceEvent,
@@ -50,6 +51,7 @@ from app.schemas import (
     StationOut,
     SupervisorOut,
     ReEnrollmentResult,
+    PasswordResetResult
 )
 from app.routers.supervisor import (
     _day_for,
@@ -587,4 +589,40 @@ async def re_enroll_photos(
         photos_submitted=result["photos_submitted"],
         photos_used=result["photos_used"],
         notes=result["notes"],
+    )
+
+# ── Super-admin: reset an account's password to its default ──────────────────
+@router.post("/accounts/{external_id}/reset-password", response_model=PasswordResetResult)
+def reset_password_to_default(
+    external_id: str,
+    current: Person = Depends(require_assistant),
+    db: Session = Depends(get_db),
+):
+    """Reset an account's password to its default (the external_id).
+
+    Only EA001 (super admin) may do this. After reset, `must_change_password`
+    is set so the user is forced to pick a new password on next login.
+
+    EA001 may reset their OWN password here too — losing access to EA001 is
+    worse than them having to log in once more with the default.
+    """
+    _require_super_admin(current)
+
+    person = _load_account(db, external_id)
+    if person.status != "active":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Account '{external_id}' is {person.status}, not active. "
+                   "Pending or rejected accounts have no password to reset.",
+        )
+
+    person.password_hash = hash_password(person.external_id)
+    person.must_change_password = True
+    db.commit()
+    db.refresh(person)
+
+    return PasswordResetResult(
+        external_id=person.external_id,
+        display_name=person.display_name,
+        default_password=person.external_id,
     )
