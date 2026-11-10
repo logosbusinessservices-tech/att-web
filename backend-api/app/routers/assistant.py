@@ -49,6 +49,7 @@ from app.schemas import (
     SignupReject,
     StationOut,
     SupervisorOut,
+    ReEnrollmentResult,
 )
 from app.routers.supervisor import (
     _day_for,
@@ -71,6 +72,18 @@ router = APIRouter(prefix="/assistant", tags=["assistant"])
 def _now():
     return datetime.now(timezone.utc)
 
+# Super-admin gate: only EA001 can use re-enrollment, account deletion,
+# and password-reset endpoints. Same pattern as signage_media. If this
+# needs to extend to other EAs later, change the check here only.
+SUPER_ADMIN_EXTERNAL_ID = "EA001"
+
+
+def _require_super_admin(current: Person) -> None:
+    if current.external_id != SUPER_ADMIN_EXTERNAL_ID:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the super admin (EA001) can perform this action.",
+        )
 
 # ── Profile ──────────────────────────────────────────────────────────────────
 @router.get("/profile", response_model=AssistantProfileOut)
@@ -524,4 +537,54 @@ def account_ref_options(
         stations=[StationOut.model_validate(s) for s in stations],
         designations=[DesignationOut.model_validate(d) for d in designations],
         employment_types=[EmploymentTypeOut.model_validate(e) for e in employment_types],
+    )
+
+# ── Super-admin: re-enroll photos for an existing employee ───────────────────
+@router.post("/accounts/{external_id}/re-enroll", response_model=ReEnrollmentResult)
+async def re_enroll_photos(
+    external_id: str,
+    photos: list[UploadFile] = File(...),
+    current: Person = Depends(require_assistant),
+    db: Session = Depends(get_db),
+):
+    """Replace an employee's face template with freshly uploaded photos.
+
+    Only EA001 (super admin) may do this. The old embedding is overwritten;
+    the old archived photos remain on disk/blob storage so a future model
+    rebuild has full history.
+
+    Fails cleanly when:
+      - caller is not EA001 (403)
+      - no account matches external_id (404)
+      - the account isn't active (409 — pending/rejected accounts go through
+        the normal onboarding flow, not re-enrollment)
+      - none of the submitted photos are usable (422)
+    """
+    _require_super_admin(current)
+
+    person = _load_account(db, external_id)
+    if person.status != "active":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Account '{external_id}' is {person.status}, not active. "
+                   "Pending or rejected accounts must go through onboarding, not re-enrollment.",
+        )
+
+    if not photos:
+        raise HTTPException(status_code=422, detail="Upload at least one photo.")
+
+    images = [await f.read() for f in photos]
+    try:
+        result = enroll_service.enroll_person(db, person, images)
+    except enroll_service.EnrollmentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    db.commit()
+    db.refresh(person)
+    return ReEnrollmentResult(
+        external_id=person.external_id,
+        display_name=person.display_name,
+        photos_submitted=result["photos_submitted"],
+        photos_used=result["photos_used"],
+        notes=result["notes"],
     )

@@ -394,6 +394,13 @@ class EmployeeProfileUpdate(BaseModel):
     phone: str | None = None
     blood_group: str | None = None
 
+class ReEnrollmentResult(BaseModel):
+    """Response when EA001 re-uploads photos for an existing employee."""
+    external_id: str
+    display_name: str
+    photos_submitted: int
+    photos_used: int
+    notes: list[str] = []  # any skipped photos (too blurry, no face, etc.)
 
 # ── Supervisor notifications ─────────────────────────────────────────────────
 class NotificationOut(BaseModel):
