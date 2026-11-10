@@ -473,6 +473,21 @@ export const api = {
     }))
   },
 
+    // Phase 9: EA001 super-admin only — replace an employee's face template
+  // with freshly uploaded photos. The backend overwrites the old embedding;
+  // old photos stay archived for future model rebuilds.
+  async reUploadEmployeePhotos(externalId, files) {
+    const form = new FormData()
+    for (const f of files) form.append('photos', f, f.name)
+    return handle(
+      await fetch(`${BASE}/assistant/accounts/${encodeURIComponent(externalId)}/re-enroll`, {
+        method: 'POST',
+        headers: { ...authHeaders() },
+        body: form,
+      })
+    )
+  },
+
   // ── EA001 super-admin: signage media (image/video slides) ──
   async signageMedia() {
     return handle(await fetch(`${BASE}/assistant/signage-media`, { headers: authHeaders() }))
