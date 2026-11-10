@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AppHeader from '../components/AppHeader.jsx'
 import { api } from '../lib/api.js'
@@ -136,7 +136,7 @@ export default function FieldAttendance({ back }) {
   }, [stopCamera, submit])
 
     // Keep the phase ref in sync so refs-based reads elsewhere stay current.
-  useEffect(() => { phaseRef.current = phase }, [phase])
+  useLayoutEffect(() => { phaseRef.current = phase }, [phase])
 
   // Keep the latest capture closure reachable from the (stable) detection loop.
   const captureRef = useRef(capture)
@@ -180,7 +180,8 @@ export default function FieldAttendance({ back }) {
   // camera down (that was the cause of the flicker / black-screen).
   useEffect(() => {
     if (!enabled) return
-    if (phaseRef.current !== 'loading') return
+    // Only start the camera when the user just picked a direction.
+    if (phase !== 'loading') return
     let cancelled = false
     capturedRef.current = false
     blinkArmed.current = false
@@ -269,8 +270,16 @@ export default function FieldAttendance({ back }) {
       }
     }
     start()
-    return () => { cancelled = true; stopCamera() }
-  }, [enabled, restartKey, stopCamera])
+        return () => {
+      // When loading → scanning, we WANT the camera AND the detection loop to
+      // stay alive; only cancel + tear down when we're leaving the active
+      // session (user navigated away, hit an error, or backed out to 'choose').
+      if (phaseRef.current !== 'scanning') {
+        cancelled = true
+        stopCamera()
+      }
+    }
+  }, [enabled, restartKey, stopCamera, phase])
 
   function reset() {
     capturedRef.current = false
