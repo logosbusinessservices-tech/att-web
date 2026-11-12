@@ -98,7 +98,7 @@ export default function ManageAccounts({ back = '/assistant' }) {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <AppHeader title="Manage Accounts" back={back} />
+      <AppHeader title="Employee Settings" back={back} />
       <main className="p-4 max-w-md mx-auto space-y-4">
         {error && <p className="text-red-600 text-sm">{error}</p>}
 
