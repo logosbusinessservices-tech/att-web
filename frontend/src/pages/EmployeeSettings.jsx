@@ -86,6 +86,16 @@ export default function EmployeeSettings({ back = '/supervisor' }) {
   const [resetConfirm, setResetConfirm] = useState(false)  // showing confirmation popup?
   const [resetResult, setResetResult] = useState(null)     // success popup state
 
+    // Phase 11: EA001 super-admin only — remove employee (soft delete).
+  const [removeConfirm, setRemoveConfirm] = useState(false)
+  const [removeResult, setRemoveResult] = useState(null)
+    // Phase 12: EA001 super-admin only — discard account (hard delete).
+  const [discardStep, setDiscardStep] = useState(null)  // null | 'preview' | 'typing' | 'done'
+  const [discardPreview, setDiscardPreview] = useState(null)  // counts from backend
+  const [discardConfirm, setDiscardConfirm] = useState('')    // what EA typed
+  const [discardResult, setDiscardResult] = useState(null)    // success result
+
+
   async function doReset() {
     setBusy(true); setError(''); setMsg('')
     try {
@@ -98,6 +108,54 @@ export default function EmployeeSettings({ back = '/supervisor' }) {
     } finally {
       setBusy(false)
     }
+  }
+
+    async function doRemove() {
+    setBusy(true); setError(''); setMsg('')
+    try {
+      const result = await api.eaRemoveAccount(edit.external_id)
+      setRemoveResult(result)
+      setRemoveConfirm(false)
+    } catch (e) {
+      setError(e.message)
+      setRemoveConfirm(false)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+    // Phase 12: fetch the count preview, then show the typing step.
+  async function startDiscard() {
+    setBusy(true); setError(''); setMsg('')
+    try {
+      const preview = await api.eaDiscardPreview(edit.external_id)
+      setDiscardPreview(preview)
+      setDiscardStep('typing')
+      setDiscardConfirm('')
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function doDiscard() {
+    setBusy(true); setError(''); setMsg('')
+    try {
+      const result = await api.eaDiscardAccount(edit.external_id, discardConfirm)
+      setDiscardResult(result)
+      setDiscardStep(null)
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function cancelDiscard() {
+    setDiscardStep(null)
+    setDiscardPreview(null)
+    setDiscardConfirm('')
   }
 
   return (
@@ -183,18 +241,49 @@ export default function EmployeeSettings({ back = '/supervisor' }) {
                 {busy ? 'Saving…' : 'Save changes'}
               </button>
 
-              {isSuperAdmin && (
-                <div className="pt-3 mt-3 border-t border-slate-100">
-                  <button
-                    onClick={() => setResetConfirm(true)}
-                    disabled={busy}
-                    className="w-full bg-amber-600 hover:bg-amber-700 text-white rounded-lg py-2.5 text-sm font-medium disabled:opacity-50"
-                  >
-                    Reset Password to Default
-                  </button>
-                  <p className="text-[11px] text-slate-400 mt-1 text-center">
-                    Super admin only. Resets to the employee code; user must change on next login.
-                  </p>
+                            {isSuperAdmin && (
+                <div className="pt-3 mt-3 border-t border-slate-100 space-y-3">
+                  {/* Reset password */}
+                  <div>
+                    <button
+                      onClick={() => setResetConfirm(true)}
+                      disabled={busy}
+                      className="w-full bg-amber-600 hover:bg-amber-700 text-white rounded-lg py-2.5 text-sm font-medium disabled:opacity-50"
+                    >
+                      Reset Password to Default
+                    </button>
+                    <p className="text-[11px] text-slate-400 mt-1 text-center">
+                      Super admin only. Resets to the employee code; user must change on next login.
+                    </p>
+                  </div>
+
+                  {/* Remove employee */}
+                  <div>
+                    <button
+                      onClick={() => setRemoveConfirm(true)}
+                      disabled={busy}
+                      className="w-full bg-red-600 hover:bg-red-700 text-white rounded-lg py-2.5 text-sm font-medium disabled:opacity-50"
+                    >
+                      Remove Employee
+                    </button>
+                    <p className="text-[11px] text-slate-400 mt-1 text-center">
+                      Use this when the employee has left the company. Their past attendance stays in reports.
+                    </p>
+                  </div>
+
+                                    {/* Discard account — hard delete */}
+                  <div>
+                    <button
+                      onClick={startDiscard}
+                      disabled={busy}
+                      className="w-full bg-slate-900 hover:bg-black text-white rounded-lg py-2.5 text-sm font-medium disabled:opacity-50 border-2 border-red-700"
+                    >
+                      Discard Account
+                    </button>
+                    <p className="text-[11px] text-slate-400 mt-1 text-center">
+                      ⚠️ Use ONLY if the account was created by mistake. All data is permanently deleted.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
@@ -248,6 +337,159 @@ export default function EmployeeSettings({ back = '/supervisor' }) {
               </p>
               <button
                 onClick={() => setResetResult(null)}
+                className="w-full bg-slate-900 text-white rounded-lg py-3 font-medium"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        )}
+                {/* Remove employee confirmation. */}
+        {removeConfirm && edit && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl p-6 max-w-sm w-full space-y-3">
+              <div className="text-center text-4xl">⚠️</div>
+              <p className="font-semibold text-slate-800 text-center">Remove this employee?</p>
+              <div className="text-sm text-slate-600 space-y-2">
+                <p>
+                  <span className="font-semibold">{edit.display_name}</span> ({edit.external_id})
+                  will be removed from the system.
+                </p>
+                <ul className="text-xs space-y-1 list-disc list-inside text-slate-500">
+                  <li>They won't be able to log in</li>
+                  <li>They won't appear in supervisor or EA lists</li>
+                  <li>Cameras will stop recognizing them</li>
+                  <li>Their past attendance stays visible in historical reports</li>
+                </ul>
+                <p className="text-xs text-slate-500 pt-1">
+                  Use this when someone has left the company. If the account was created by mistake
+                  and has no real attendance data, use <span className="font-semibold">Discard Account</span> instead
+                  (coming soon).
+                </p>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => setRemoveConfirm(false)}
+                  disabled={busy}
+                  className="flex-1 bg-slate-100 text-slate-800 rounded-lg py-2.5 text-sm font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={doRemove}
+                  disabled={busy}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white rounded-lg py-2.5 text-sm font-medium disabled:opacity-50"
+                >
+                  {busy ? 'Removing…' : 'Remove'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Remove employee success popup. */}
+        {removeResult && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl p-6 max-w-sm w-full space-y-3 text-center">
+              <div className="text-5xl">✓</div>
+              <p className="font-semibold text-slate-800">Employee removed</p>
+              <p className="text-sm text-slate-600">
+                {removeResult.display_name} ({removeResult.external_id}) is no longer active.
+                Their past attendance remains visible in historical reports.
+              </p>
+              <button
+                onClick={() => { setRemoveResult(null); setEdit(null) }}
+                className="w-full bg-slate-900 text-white rounded-lg py-3 font-medium"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        )}
+                {/* Discard Account typing-confirmation popup. */}
+        {discardStep === 'typing' && discardPreview && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl p-6 max-w-sm w-full space-y-3">
+              <div className="text-center text-4xl">🗑️</div>
+              <p className="font-semibold text-slate-800 text-center">Discard this account?</p>
+              <div className="text-sm text-slate-600 space-y-2">
+                <p>
+                  <span className="font-semibold">{discardPreview.display_name}</span> ({discardPreview.external_id})
+                  will be <span className="font-semibold text-red-700">permanently deleted</span>.
+                </p>
+                <p className="text-xs">This will erase:</p>
+                                <ul className="text-xs space-y-1 list-disc list-inside text-slate-500 bg-red-50 border border-red-100 rounded p-2">
+                  <li>{discardPreview.attendance_events} attendance event{discardPreview.attendance_events === 1 ? '' : 's'}</li>
+                  <li>{discardPreview.corrections} supervisor correction{discardPreview.corrections === 1 ? '' : 's'}</li>
+                  <li>{discardPreview.disputes} dispute{discardPreview.disputes === 1 ? '' : 's'}</li>
+                  <li>{discardPreview.leave_requests} leave request{discardPreview.leave_requests === 1 ? '' : 's'}</li>
+                  <li>{discardPreview.delegated_tasks} delegated task{discardPreview.delegated_tasks === 1 ? '' : 's'}</li>
+                  <li>{discardPreview.notifications} notification{discardPreview.notifications === 1 ? '' : 's'}</li>
+                  <li>The employee's face template</li>
+                  <li>The account itself</li>
+                </ul>
+                <p className="text-xs text-red-700 font-semibold pt-1">
+                  This cannot be undone.
+                </p>
+                {discardPreview.attendance_events > 0 && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                    This account has real attendance data. If the employee has actually
+                    left the company, use <span className="font-semibold">Remove Employee</span> instead
+                    to keep history visible.
+                  </p>
+                )}
+                <p className="text-xs pt-2">
+                  To confirm, type <span className="font-mono font-semibold">DELETE</span> below:
+                </p>
+                <input
+                  type="text"
+                  value={discardConfirm}
+                  onChange={(e) => setDiscardConfirm(e.target.value)}
+                  placeholder="Type DELETE"
+                  autoFocus
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono"
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={cancelDiscard}
+                  disabled={busy}
+                  className="flex-1 bg-slate-100 text-slate-800 rounded-lg py-2.5 text-sm font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={doDiscard}
+                  disabled={busy || discardConfirm !== 'DELETE'}
+                  className="flex-1 bg-red-700 hover:bg-red-800 text-white rounded-lg py-2.5 text-sm font-medium disabled:opacity-40"
+                >
+                  {busy ? 'Discarding…' : 'Discard forever'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Discard success popup. */}
+        {discardResult && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl p-6 max-w-sm w-full space-y-3 text-center">
+              <div className="text-5xl">🗑️</div>
+              <p className="font-semibold text-slate-800">Account discarded</p>
+              <p className="text-sm text-slate-600">
+                {discardResult.display_name} ({discardResult.external_id}) and all their data
+                have been permanently deleted.
+              </p>
+              <ul className="text-xs text-slate-500 text-left bg-slate-50 rounded p-2 space-y-0.5">
+                <li>• {discardResult.attendance_events_deleted} attendance events</li>
+                <li>• {discardResult.corrections_deleted} supervisor corrections</li>
+                <li>• {discardResult.disputes_deleted} disputes</li>
+                <li>• {discardResult.leave_requests_deleted} leave requests</li>
+                <li>• {discardResult.delegated_tasks_deleted} delegated tasks</li>
+                <li>• {discardResult.notifications_deleted} notifications</li>
+              </ul>
+              <button
+                onClick={() => { setDiscardResult(null); setDiscardPreview(null); setEdit(null) }}
                 className="w-full bg-slate-900 text-white rounded-lg py-3 font-medium"
               >
                 OK

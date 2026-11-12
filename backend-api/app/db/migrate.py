@@ -17,9 +17,10 @@ log = logging.getLogger(__name__)
 
 
 def run_migrations(engine: Engine) -> None:
-    columns = {c["name"] for c in inspect(engine).get_columns("attendance_events")}
+    # ── attendance_events: event_uuid column + unique index ─────────────────
+    event_columns = {c["name"] for c in inspect(engine).get_columns("attendance_events")}
     with engine.begin() as conn:
-        if "event_uuid" not in columns:
+        if "event_uuid" not in event_columns:
             conn.execute(text("ALTER TABLE attendance_events ADD COLUMN event_uuid VARCHAR"))
             log.info("Added attendance_events.event_uuid")
         conn.execute(text(
@@ -43,3 +44,12 @@ def run_migrations(engine: Engine) -> None:
             ).rowcount
             if avatars or selfies:
                 log.info("Cleared %s stale avatar and %s stale selfie link(s)", avatars, selfies)
+
+    # ── persons: deleted_at column (Phase 11 soft delete) ───────────────────
+    person_columns = {c["name"] for c in inspect(engine).get_columns("persons")}
+    with engine.begin() as conn:
+        if "deleted_at" not in person_columns:
+            conn.execute(text(
+                "ALTER TABLE persons ADD COLUMN deleted_at TIMESTAMP WITH TIME ZONE"
+            ))
+            log.info("Added persons.deleted_at")

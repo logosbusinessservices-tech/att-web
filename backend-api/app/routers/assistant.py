@@ -15,6 +15,7 @@ from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from app.db.models import FaceEmbedding
 
 from app import storage
 from app.auth.deps import require_assistant
@@ -28,6 +29,11 @@ from app.db.models import (
     EmploymentType,
     Person,
     Station,
+    Notification,
+    AttendanceOverride,
+    Dispute,
+    LeaveRequest,
+    
 )
 from app.schemas import (
     AssistantProfileOut,
@@ -51,7 +57,10 @@ from app.schemas import (
     StationOut,
     SupervisorOut,
     ReEnrollmentResult,
-    PasswordResetResult
+    PasswordResetResult,
+    RemoveAccountResult,
+    DiscardAccountPreview,
+    DiscardAccountResult
 )
 from app.routers.supervisor import (
     _day_for,
@@ -625,4 +634,159 @@ def reset_password_to_default(
         external_id=person.external_id,
         display_name=person.display_name,
         default_password=person.external_id,
+    )
+
+# ── Super-admin: remove (soft delete) an employee ────────────────────────────
+@router.post("/accounts/{external_id}/remove", response_model=RemoveAccountResult)
+def remove_account(
+    external_id: str,
+    current: Person = Depends(require_assistant),
+    db: Session = Depends(get_db),
+):
+    """Mark an employee as removed (soft delete).
+
+    Only EA001 (super admin) may do this. Use this when someone has actually
+    left the company. The person row stays in the database so historical
+    attendance records are preserved and analytics still works for past
+    dates. The person:
+      - can no longer log in (is_active = False)
+      - no longer appears in account/team/supervisor lists
+      - is no longer recognized by cameras (their face template is deleted)
+
+    EA001 cannot remove themselves (would lock them out of the super admin
+    role). For any other account including other EAs, removal is allowed.
+    """
+    _require_super_admin(current)
+
+    if external_id == SUPER_ADMIN_EXTERNAL_ID:
+        raise HTTPException(
+            status_code=400,
+            detail="You can't remove your own super admin account.",
+        )
+
+    person = _load_account(db, external_id)
+    if person.status == "deleted":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Account '{external_id}' is already removed.",
+        )
+
+    person.status = "deleted"
+    person.is_active = False
+    person.deleted_at = datetime.now(timezone.utc)
+
+    # Delete the face template so cameras stop recognizing this person.
+    # Thanks to the ondelete=CASCADE on FaceEmbedding.person_id, this is a
+    # single query. The person row (and their attendance history) stays.
+    db.query(FaceEmbedding).filter(FaceEmbedding.person_id == person.id).delete()
+
+    db.commit()
+    db.refresh(person)
+    return RemoveAccountResult(
+        external_id=person.external_id,
+        display_name=person.display_name,
+        deleted_at=person.deleted_at,
+    )
+
+# ── Super-admin: preview what Discard Account will delete ────────────────────
+
+@router.get("/accounts/{external_id}/discard-preview", response_model=DiscardAccountPreview)
+def discard_account_preview(
+    external_id: str,
+    current: Person = Depends(require_assistant),
+    db: Session = Depends(get_db),
+):
+    """Count every record that would be deleted if EA proceeds with Discard.
+
+    Shown to EA in the confirmation popup so they know exactly how much data
+    they're about to erase. Does NOT delete anything.
+    """
+    _require_super_admin(current)
+    person = _load_account(db, external_id)
+    pid = person.id
+    return DiscardAccountPreview(
+        external_id=person.external_id,
+        display_name=person.display_name,
+        attendance_events=db.query(AttendanceEvent).filter(AttendanceEvent.person_id == pid).count(),
+        corrections=db.query(AttendanceOverride).filter(AttendanceOverride.person_id == pid).count(),
+        disputes=db.query(Dispute).filter(Dispute.person_id == pid).count(),
+        leave_requests=db.query(LeaveRequest).filter(LeaveRequest.person_id == pid).count(),
+        delegated_tasks=db.query(DelegatedTask).filter(DelegatedTask.person_id == pid).count(),
+        notifications=db.query(Notification).filter(Notification.person_id == pid).count(),
+    )
+
+
+# ── Super-admin: discard account (permanent hard delete) ─────────────────────
+@router.delete("/accounts/{external_id}/discard", response_model=DiscardAccountResult)
+def discard_account(
+    external_id: str,
+    confirmation: str = Query(..., description="Must be the literal word 'DELETE'"),
+    current: Person = Depends(require_assistant),
+    db: Session = Depends(get_db),
+):
+    """Permanently delete an account and ALL their data.
+
+    Only EA001 (super admin) may do this, and only when they pass 'DELETE'
+    as the `confirmation` query param. Meant for accounts created by mistake —
+    real employees should use Remove Employee (soft delete) so history stays.
+
+    Deletes in FK-safe order (dependents first):
+      1. Notifications
+      2. Delegated tasks (where this person is the subject)
+      3. Leave requests
+      4. Disputes
+      5. Attendance overrides (corrections)
+      6. Attendance events
+      7. Face embedding (cascades via ondelete=CASCADE)
+      8. The person row
+    """
+    _require_super_admin(current)
+
+    if confirmation != "DELETE":
+        raise HTTPException(
+            status_code=400,
+            detail="Confirmation failed. Type 'DELETE' exactly to confirm.",
+        )
+
+    if external_id == SUPER_ADMIN_EXTERNAL_ID:
+        raise HTTPException(
+            status_code=400,
+            detail="You can't discard your own super admin account.",
+        )
+
+    person = _load_account(db, external_id)
+    pid = person.id
+
+    # Count before deleting so we can report back to EA.
+    counts = {
+        "notifications": db.query(Notification).filter(Notification.person_id == pid).count(),
+        "delegated_tasks": db.query(DelegatedTask).filter(DelegatedTask.person_id == pid).count(),
+        "leave_requests": db.query(LeaveRequest).filter(LeaveRequest.person_id == pid).count(),
+        "disputes": db.query(Dispute).filter(Dispute.person_id == pid).count(),
+        "corrections": db.query(AttendanceOverride).filter(AttendanceOverride.person_id == pid).count(),
+        "attendance_events": db.query(AttendanceEvent).filter(AttendanceEvent.person_id == pid).count(),
+    }
+
+    # Delete in FK-safe order (dependents first, parent last).
+    db.query(Notification).filter(Notification.person_id == pid).delete()
+    db.query(DelegatedTask).filter(DelegatedTask.person_id == pid).delete()
+    db.query(LeaveRequest).filter(LeaveRequest.person_id == pid).delete()
+    db.query(Dispute).filter(Dispute.person_id == pid).delete()
+    db.query(AttendanceOverride).filter(AttendanceOverride.person_id == pid).delete()
+    db.query(AttendanceEvent).filter(AttendanceEvent.person_id == pid).delete()
+    # FaceEmbedding cascades via ondelete="CASCADE" when we delete the person.
+
+    display_name = person.display_name
+    db.delete(person)
+    db.commit()
+
+    return DiscardAccountResult(
+        external_id=external_id,
+        display_name=display_name,
+        attendance_events_deleted=counts["attendance_events"],
+        corrections_deleted=counts["corrections"],
+        disputes_deleted=counts["disputes"],
+        leave_requests_deleted=counts["leave_requests"],
+        delegated_tasks_deleted=counts["delegated_tasks"],
+        notifications_deleted=counts["notifications"],
     )

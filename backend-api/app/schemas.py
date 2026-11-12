@@ -408,6 +408,35 @@ class PasswordResetResult(BaseModel):
     display_name: str
     default_password: str  # the new password (= employee code); EA tells the user
 
+class RemoveAccountResult(BaseModel):
+    """Response when EA001 super-admin soft-deletes (removes) an account."""
+    external_id: str
+    display_name: str
+    deleted_at: datetime
+
+class DiscardAccountPreview(BaseModel):
+    """What will be deleted if EA proceeds with Discard Account."""
+    external_id: str
+    display_name: str
+    attendance_events: int
+    corrections: int          # AttendanceOverride rows
+    disputes: int
+    leave_requests: int
+    delegated_tasks: int      # tasks ABOUT this person
+    notifications: int
+
+
+class DiscardAccountResult(BaseModel):
+    """Response after a successful hard-delete."""
+    external_id: str
+    display_name: str
+    attendance_events_deleted: int
+    corrections_deleted: int
+    disputes_deleted: int
+    leave_requests_deleted: int
+    delegated_tasks_deleted: int
+    notifications_deleted: int
+
 # ── Supervisor notifications ─────────────────────────────────────────────────
 class NotificationOut(BaseModel):
     type: str                        # password_reminder | camera_error

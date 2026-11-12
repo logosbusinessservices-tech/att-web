@@ -107,6 +107,9 @@ class Person(Base):
     # When the account was approved/activated. Reminders (password, attendance
     # photos) count from here, since created_at is when they first signed up.
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+        # When the account was removed (soft delete). None for active accounts.
+    # The person row stays so historical attendance data remains attached.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Cosmetic profile photo (NOT the biometric face template). Defaults to a
     # supervisor-taken shot; the employee may replace it with their own.
     avatar_path: Mapped[str | None] = mapped_column(String)

@@ -452,7 +452,34 @@ export const api = {
       { method: 'POST', headers: authHeaders() }
     ))
   },
+    // Phase 11: EA001 super-admin only — remove an employee (soft delete).
+  // The person row stays so historical data is preserved; they can't log in,
+  // don't appear in lists, and their face template is deleted.
+  async eaRemoveAccount(externalId) {
+    return handle(await fetch(
+      `${BASE}/assistant/accounts/${encodeURIComponent(externalId)}/remove`,
+      { method: 'POST', headers: authHeaders() }
+    ))
+  },
 
+    // Phase 12: EA001 super-admin only — preview what Discard would delete.
+  async eaDiscardPreview(externalId) {
+    return handle(await fetch(
+      `${BASE}/assistant/accounts/${encodeURIComponent(externalId)}/discard-preview`,
+      { headers: authHeaders() }
+    ))
+  },
+
+  // Phase 12: EA001 super-admin only — permanently delete account + all data.
+  // Requires the literal string 'DELETE' as confirmation.
+  async eaDiscardAccount(externalId, confirmation) {
+    const qs = new URLSearchParams({ confirmation })
+    return handle(await fetch(
+      `${BASE}/assistant/accounts/${encodeURIComponent(externalId)}/discard?${qs}`,
+      { method: 'DELETE', headers: authHeaders() }
+    ))
+  },
+  
   // ── EA: gate-monitor announcements ──
   async displayMessages() {
     return handle(await fetch(`${BASE}/assistant/display-messages`, { headers: authHeaders() }))
