@@ -47,8 +47,10 @@ export default function ManageAccounts({ back = '/assistant' }) {
   const [msg, setMsg] = useState('')
 
   // Phase 15: Re-upload pictures.
+  const [reuploadChoice, setReuploadChoice] = useState(false)  // showing camera-or-gallery popup?
   const [reuploadFiles, setReuploadFiles] = useState([])
   const [reuploadResult, setReuploadResult] = useState(null)
+  
 
   // Phase 15: Reset password to default.
   const [resetConfirm, setResetConfirm] = useState(false)
@@ -345,6 +347,7 @@ export default function ManageAccounts({ back = '/assistant' }) {
 
                   {/* Re-upload pictures */}
                   <div className="space-y-1">
+                    {/* Hidden inputs — one for camera, one for gallery. */}
                     <input
                       type="file"
                       accept="image/*"
@@ -352,14 +355,22 @@ export default function ManageAccounts({ back = '/assistant' }) {
                       capture="user"
                       onChange={onReuploadFilesChosen}
                       className="hidden"
-                      id={`reupload-${edit.external_id}`}
+                      id={`reupload-camera-${edit.external_id}`}
                     />
-                    <label
-                      htmlFor={`reupload-${edit.external_id}`}
-                      className="block w-full text-center py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium cursor-pointer"
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={onReuploadFilesChosen}
+                      className="hidden"
+                      id={`reupload-gallery-${edit.external_id}`}
+                    />
+                    <button
+                      onClick={() => setReuploadChoice(true)}
+                      className="block w-full text-center py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium"
                     >
                       📷 Re-upload Pictures ({reuploadFiles.length ? `${reuploadFiles.length} chosen` : 'choose photos'})
-                    </label>
+                    </button>
                     {reuploadFiles.length > 0 && (
                       <button
                         onClick={doReupload}
@@ -420,6 +431,39 @@ export default function ManageAccounts({ back = '/assistant' }) {
             </div>
           </div>
         )}
+
+                {/* Re-upload: choose camera or gallery. */}
+        {reuploadChoice && edit && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-2xl p-6 max-w-sm w-full space-y-3">
+              <p className="font-semibold text-slate-800 text-center">Add pictures</p>
+              <p className="text-xs text-slate-500 text-center">
+                You can select multiple photos from either source.
+              </p>
+              <label
+                htmlFor={`reupload-camera-${edit.external_id}`}
+                onClick={() => setReuploadChoice(false)}
+                className="block w-full text-center py-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium cursor-pointer"
+              >
+                📷 Take Photo
+              </label>
+              <label
+                htmlFor={`reupload-gallery-${edit.external_id}`}
+                onClick={() => setReuploadChoice(false)}
+                className="block w-full text-center py-3 rounded-lg bg-slate-700 hover:bg-slate-800 text-white text-sm font-medium cursor-pointer"
+              >
+                🖼️ Choose from Gallery
+              </label>
+              <button
+                onClick={() => setReuploadChoice(false)}
+                className="w-full bg-slate-100 text-slate-800 rounded-lg py-2.5 text-sm font-medium"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        
                 {/* Re-upload success popup. */}
         {reuploadResult && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
