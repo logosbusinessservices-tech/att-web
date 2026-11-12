@@ -134,14 +134,20 @@ def _seed(db):
         department_id=dept.id, home_station_id=station.id, password_hash=pw,
         manager_id=sup.id, blood_group="O+",
     )
-    # A second supervisor with no EA, to test the "no EA to delegate to" guard.
+        # A second supervisor with no EA, to test the "no EA to delegate to" guard.
     sup2 = Person(
         external_id="SUP002", display_name="Other Supervisor", role="supervisor",
         department_id=other.id, password_hash=pw,
     )
-    db.add_all([ea, sup2])
+    # A second EA that is NOT the super admin — used by Phase 9-12 tests
+    # to verify that EA001-only actions reject regular EAs.
+    ea2 = Person(
+        external_id="EA002", display_name="Regular Assistant", role="assistant",
+        department_id=dept.id, home_station_id=station.id, password_hash=pw,
+        manager_id=sup.id,
+    )
+    db.add_all([ea, sup2, ea2])
     db.flush()
-
     # Chief manager: no department; sees every department incl. supervisors.
     chief = Person(
         external_id="SUPCPM", display_name="Chief Manager", role="chief",
@@ -223,6 +229,11 @@ def sup2_headers(client):
 def ea_headers(client):
     return {"Authorization": f"Bearer {_token(client, 'EA001')}"}
 
+@pytest.fixture()
+def ea2_headers(client):
+    """A regular (non-super-admin) EA. Used by Phase 9-12 tests to confirm
+    that EA001-only actions reject other EAs with 403."""
+    return {"Authorization": f"Bearer {_token(client, 'EA002')}"}
 
 @pytest.fixture()
 def chief_headers(client):

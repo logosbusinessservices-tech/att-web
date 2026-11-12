@@ -7,19 +7,6 @@ from app.auth.security import hash_password
 from app.db.models import Person
 
 
-@pytest.fixture()
-def ea2_headers(client, db_session):
-    """A second assistant (EA002) who is NOT the super admin."""
-    pw = hash_password("EA002")
-    ea2 = Person(
-        external_id="EA002", display_name="Other Assistant", role="assistant",
-        password_hash=pw,
-    )
-    db_session.add(ea2)
-    db_session.commit()
-    r = client.post("/auth/login", data={"username": "EA002", "password": "EA002"})
-    return {"Authorization": f"Bearer {r.json()['access_token']}"}
-
 
 # A minimal valid JPEG (smallest possible).
 TINY_JPEG = (
