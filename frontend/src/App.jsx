@@ -16,12 +16,12 @@ import Notifications from './pages/Notifications.jsx'
 import ChangePassword from './pages/ChangePassword.jsx'
 import FieldAttendance from './pages/FieldAttendance.jsx'
 import FieldApprovals from './pages/FieldApprovals.jsx'
-import EmployeeSettings from './pages/EmployeeSettings.jsx'
+
 import ManageAccounts from './pages/ManageAccounts.jsx'
 import DisplayMessages from './pages/DisplayMessages.jsx'
 import SignageMedia from './pages/SignageMedia.jsx'
 import Inbox from './pages/Inbox.jsx'
-import ReUploadPhotos from './pages/ReUploadPhotos.jsx'
+
 // Charts (recharts) are heavy; load the Analytics page only when opened.
 const Analytics = lazy(() => import('./pages/Analytics.jsx'))
 
@@ -115,10 +115,6 @@ export default function App() {
         element={<Protected role="supervisor"><FieldApprovals back="/supervisor" /></Protected>}
       />
       <Route
-        path="/supervisor/employee-settings"
-        element={<Protected role="supervisor"><EmployeeSettings back="/supervisor" /></Protected>}
-      />
-      <Route
         path="/supervisor/change-password"
         element={<Protected role="supervisor"><ChangePassword back="/supervisor" /></Protected>}
       />
@@ -176,10 +172,6 @@ export default function App() {
       <Route
         path="/assistant/signage-media"
         element={<Protected role="assistant"><SignageMedia back="/assistant" /></Protected>}
-      />
-      <Route
-        path="/assistant/re-upload-photos"
-        element={<Protected role="assistant"><ReUploadPhotos back="/assistant" /></Protected>}
       />
     </Routes>
   )

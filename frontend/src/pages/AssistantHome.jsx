@@ -34,9 +34,7 @@ export default function AssistantHome() {
           {user?.external_id === 'EA001' && (
             <MenuButton icon={<SlidesIcon />} label="Signage Media" to="/assistant/signage-media" />
           )}
-          {user?.external_id === 'EA001' && (
-            <MenuButton icon={<ProfileIcon />} label="Re-upload Pictures" to="/assistant/re-upload-photos" />
-          )}
+
         </div>
       </main>
     </div>

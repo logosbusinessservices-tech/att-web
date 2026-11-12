@@ -23,7 +23,6 @@ export default function SupervisorHome() {
           <MenuButton icon={<DashboardIcon />} label="Employee Attendance" to="/supervisor/dashboards" />
           <MenuButton icon={<ChartIcon />} label="Analytics" to="/supervisor/analytics" />
           <MenuButton icon={<ApprovalsIcon />} label="Field Approvals" to="/supervisor/field-approvals" />
-          <MenuButton icon={<SettingsIcon />} label="Employee Settings" to="/supervisor/employee-settings" />
           <MenuButton icon={<BellIcon />} label="Notifications" to="/supervisor/notifications" />
           <MenuButton icon={<ProfileIcon />} label="My Profile" to="/supervisor/profile" />
           <MenuButton icon={<LeaveIcon />} label="Apply Work From Home/Leave" to="/supervisor/leave" />
